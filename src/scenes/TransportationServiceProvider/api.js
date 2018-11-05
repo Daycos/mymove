@@ -5,9 +5,11 @@ import { formatPayload } from 'shared/utils';
 export async function RetrieveShipmentsForTSP(queueType) {
   const queueToStatus = {
     new: ['AWARDED'],
-    in_transit: ['IN_TRANSIT'],
+    accepted: ['ACCEPTED'],
     approved: ['APPROVED'],
+    in_transit: ['IN_TRANSIT'],
     delivered: ['DELIVERED'],
+    completed: ['COMPLETED'],
     all: [],
   };
   /* eslint-disable security/detect-object-injection */
@@ -55,23 +57,12 @@ export async function RejectShipment(shipmentId, reason) {
 
 export async function TransportShipment(shipmentId, payload) {
   const client = await getPublicClient();
-  const payloadDef = client.spec.definitions.ActualPickupDate;
+  const payloadDef = client.spec.definitions.TransportPayload;
   const response = await client.apis.shipments.transportShipment({
     shipmentId,
     payload: formatPayload(payload, payloadDef),
   });
   checkResponse(response, 'failed to pick up shipment due to server error');
-  return response.body;
-}
-
-export async function PackShipment(shipmentId, payload) {
-  const client = await getPublicClient();
-  const payloadDef = client.spec.definitions.ActualPackDate;
-  const response = await client.apis.shipments.packShipment({
-    shipmentId,
-    payload: formatPayload(payload, payloadDef),
-  });
-  checkResponse(response, 'failed to pack shipment due to server error');
   return response.body;
 }
 

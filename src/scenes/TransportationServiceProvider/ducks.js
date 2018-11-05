@@ -1,10 +1,10 @@
+import { isNull, get } from 'lodash';
 import {
   LoadShipment,
   PatchShipment,
   AcceptShipment,
   RejectShipment,
   TransportShipment,
-  PackShipment,
   DeliverShipment,
   CreateServiceAgent,
   IndexServiceAgents,
@@ -14,6 +14,7 @@ import {
 } from './api.js';
 
 import * as ReduxHelpers from 'shared/ReduxHelpers';
+import { getEntitlements } from 'shared/entitlements.js';
 
 // SINGLE RESOURCE ACTION TYPES
 const loadShipmentType = 'LOAD_SHIPMENT';
@@ -22,7 +23,6 @@ const acceptShipmentType = 'ACCEPT_SHIPMENT';
 const generateGBLType = 'GENERATE_GBL';
 const rejectShipmentType = 'REJECT_SHIPMENT';
 const transportShipmentType = 'TRANSPORT_SHIPMENT';
-const packShipmentType = 'PACK_SHIPMENT';
 const deliverShipmentType = 'DELIVER_SHIPMENT';
 const loadShipmentDocumentsType = 'LOAD_SHIPMENT_DOCUMENTS';
 
@@ -39,7 +39,6 @@ const PATCH_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(patchShipmentType);
 const ACCEPT_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(acceptShipmentType);
 const REJECT_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(rejectShipmentType);
 const TRANSPORT_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(transportShipmentType);
-const PACK_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(packShipmentType);
 const DELIVER_SHIPMENT = ReduxHelpers.generateAsyncActionTypes(deliverShipmentType);
 const LOAD_SHIPMENT_DOCUMENTS = ReduxHelpers.generateAsyncActionTypes(loadShipmentDocumentsType);
 
@@ -68,8 +67,6 @@ export const generateGBL = ReduxHelpers.generateAsyncActionCreator(generateGBLTy
 export const rejectShipment = ReduxHelpers.generateAsyncActionCreator(rejectShipmentType, RejectShipment);
 
 export const transportShipment = ReduxHelpers.generateAsyncActionCreator(transportShipmentType, TransportShipment);
-
-export const packShipment = ReduxHelpers.generateAsyncActionCreator(packShipmentType, PackShipment);
 
 export const deliverShipment = ReduxHelpers.generateAsyncActionCreator(deliverShipmentType, DeliverShipment);
 
@@ -115,7 +112,15 @@ export function loadShipmentDependencies(shipmentId) {
 }
 
 // Selectors
-
+export function loadEntitlements(state) {
+  const hasDependents = get(state, 'tsp.shipment.move.has_dependents', null);
+  const spouseHasProGear = get(state, 'tsp.shipment.move.spouse_has_pro_gear', null);
+  const rank = get(state, 'tsp.shipment.service_member.rank', null);
+  if (isNull(hasDependents) || isNull(spouseHasProGear) || isNull(rank)) {
+    return null;
+  }
+  return getEntitlements(rank, hasDependents, spouseHasProGear);
+}
 // Reducer
 const initialState = {
   shipmentIsLoading: false,
@@ -132,9 +137,6 @@ const initialState = {
   shipmentIsSendingTransport: false,
   shipmentHasTransportError: null,
   shipmentHasTransportSuccess: false,
-  shipmentIsPacking: false,
-  shipmentHasPackingError: null,
-  shipmentHasPackingSuccess: false,
   shipmentIsDelivering: false,
   shipmentHasDeliverError: null,
   shipmentHasDeliverSuccess: false,
@@ -253,25 +255,6 @@ export function tspReducer(state = initialState, action) {
         shipmentIsSendingTransport: false,
         shipmentHasTransportSuccess: false,
         shipmentHasTransportError: null,
-        error: action.error.message,
-      });
-    case PACK_SHIPMENT.start:
-      return Object.assign({}, state, {
-        shipmentIsPacking: true,
-        shipmentHasPackingSuccess: false,
-      });
-    case PACK_SHIPMENT.success:
-      return Object.assign({}, state, {
-        shipmentIsPacking: false,
-        shipmentHasPackingSuccess: true,
-        shipmentHasPackingError: false,
-        shipment: action.payload,
-      });
-    case PACK_SHIPMENT.failure:
-      return Object.assign({}, state, {
-        shipmentIsPacking: false,
-        shipmentHasPackingSuccess: false,
-        shipmentHasPackingError: null,
         error: action.error.message,
       });
     case DELIVER_SHIPMENT.start:
@@ -415,9 +398,8 @@ export function tspReducer(state = initialState, action) {
     case GENERATE_GBL.failure:
       return Object.assign({}, state, {
         generateGBLSuccess: false,
-        generateGBLError: true,
+        generateGBLError: action.error,
         generateGBLInProgress: false,
-        error: action.error,
         gblDocUrl: null,
       });
 

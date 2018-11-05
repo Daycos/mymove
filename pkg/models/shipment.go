@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/gobuffalo/pop"
-	"github.com/gobuffalo/uuid"
 	"github.com/gobuffalo/validate"
 	"github.com/gobuffalo/validate/validators"
+	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
 
 	"github.com/transcom/mymove/pkg/auth"
+	"github.com/transcom/mymove/pkg/dates"
 	"github.com/transcom/mymove/pkg/unit"
 )
 
@@ -224,6 +225,21 @@ func (s *Shipment) BeforeSave(tx *pop.Connection) error {
 		s.TrafficDistributionList = trafficDistributionList
 	}
 
+	// Ensure that OriginalPackDate and OriginalDeliveryDate are set
+	// Requires that we know RequestedPickupDate, EstimatedPackDays, and EstimatedTransitDays
+	if s.RequestedPickupDate != nil && s.EstimatedPackDays != nil && s.EstimatedTransitDays != nil &&
+		(s.OriginalPackDate == nil || s.OriginalDeliveryDate != nil) {
+		var summary dates.MoveDatesSummary
+		summary.CalculateMoveDates(*s.RequestedPickupDate, int(*s.EstimatedPackDays), int(*s.EstimatedTransitDays))
+
+		if s.OriginalPackDate == nil {
+			s.OriginalPackDate = &summary.PackDays[0]
+		}
+		if s.OriginalDeliveryDate == nil {
+			s.OriginalDeliveryDate = &summary.DeliveryDays[0]
+		}
+	}
+
 	return nil
 }
 
@@ -282,8 +298,8 @@ func (s *Shipment) DetermineTrafficDistributionList(db *pop.Connection) (*Traffi
 	return &trafficDistributionList, nil
 }
 
-// CreateShipmentAccessorial creates a new ShipmentAccessorial tied to the Shipment
-func (s *Shipment) CreateShipmentAccessorial(db *pop.Connection, accessorialID uuid.UUID, q1, q2 *int64, location string, notes *string) (*ShipmentAccessorial, *validate.Errors, error) {
+// CreateShipmentLineItem creates a new ShipmentLineItem tied to the Shipment
+func (s *Shipment) CreateShipmentLineItem(db *pop.Connection, tariff400ngItemID uuid.UUID, q1, q2 *int64, location string, notes *string) (*ShipmentLineItem, *validate.Errors, error) {
 	var quantity2 unit.BaseQuantity
 	if q2 != nil {
 		quantity2 = unit.BaseQuantity(*q2)
@@ -294,29 +310,29 @@ func (s *Shipment) CreateShipmentAccessorial(db *pop.Connection, accessorialID u
 		notesVal = *notes
 	}
 
-	shipmentAccessorial := ShipmentAccessorial{
-		ShipmentID:    s.ID,
-		AccessorialID: accessorialID,
-		Quantity1:     unit.BaseQuantity(*q1),
-		Quantity2:     quantity2,
-		Location:      ShipmentAccessorialLocation(location),
-		Notes:         notesVal,
-		SubmittedDate: time.Now(),
-		Status:        ShipmentAccessorialStatusSUBMITTED,
+	shipmentLineItem := ShipmentLineItem{
+		ShipmentID:        s.ID,
+		Tariff400ngItemID: tariff400ngItemID,
+		Quantity1:         unit.BaseQuantity(*q1),
+		Quantity2:         quantity2,
+		Location:          ShipmentLineItemLocation(location),
+		Notes:             notesVal,
+		SubmittedDate:     time.Now(),
+		Status:            ShipmentLineItemStatusSUBMITTED,
 	}
 
-	verrs, err := db.ValidateAndCreate(&shipmentAccessorial)
+	verrs, err := db.ValidateAndCreate(&shipmentLineItem)
 	if verrs.HasAny() || err != nil {
-		return &ShipmentAccessorial{}, verrs, err
+		return &ShipmentLineItem{}, verrs, err
 	}
 
-	// Loads accessorial information
-	err = db.Load(&shipmentAccessorial)
+	// Loads line item information
+	err = db.Load(&shipmentLineItem)
 	if err != nil {
-		return &ShipmentAccessorial{}, validate.NewErrors(), err
+		return &ShipmentLineItem{}, validate.NewErrors(), err
 	}
 
-	return &shipmentAccessorial, validate.NewErrors(), nil
+	return &shipmentLineItem, validate.NewErrors(), nil
 }
 
 // AssignGBLNumber generates a new valid GBL number for the shipment
@@ -482,6 +498,8 @@ func FetchShipmentByTSP(tx *pop.Connection, tspID uuid.UUID, shipmentID uuid.UUI
 		"TrafficDistributionList",
 		"ServiceMember.BackupContacts",
 		"Move.Orders.NewDutyStation.Address",
+		"Move.Orders.HasDependents",
+		"Move.Orders.SpouseHasProGear",
 		"Move.Orders.ServiceMemberID",
 		"PickupAddress",
 		"SecondaryPickupAddress",
