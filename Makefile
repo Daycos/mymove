@@ -32,7 +32,7 @@ go_version: .go_version.stamp
 	bin/check_go_version
 	touch .go_version.stamp
 
-deps: prereqs ensure_pre_commit client_deps server_deps
+deps: prereqs client_deps server_deps
 test: client_test server_test e2e_test
 
 spellcheck:
@@ -54,17 +54,17 @@ client_deps: .client_deps.stamp
 	touch .client_build.stamp
 client_build: client_deps .client_build.stamp
 client_run: client_deps
-	yarn start
+	PORT=4000 HOST=mymove yarn start
 client_test: client_deps
 	yarn test
 client_test_coverage : client_deps
 	yarn test:coverage
 
 office_client_run: client_deps
-	HOST=officelocal yarn start
+	PORT=4001 HOST=office_mymove yarn start
 
 tsp_client_run: client_deps
-	HOST=tsplocal yarn start
+	PORT=4002 HOST=tsp_mymove yarn start
 
 server_deps_update: server_generate
 	dep ensure -v -update
@@ -101,7 +101,7 @@ server_run_default: server_deps server_generate db_dev_run
 	INTERFACE=localhost DEBUG_LOGGING=true \
 	$(AWS_VAULT) ./bin/gin --build ./cmd/webserver \
 		--bin /bin/webserver \
-		--port 8080 --appPort 8081 \
+		--port 8090 --appPort 8091 \
 		--excludeDir vendor --excludeDir node_modules \
 		-i --buildArgs "-i"
 
