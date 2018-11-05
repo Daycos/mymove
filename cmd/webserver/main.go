@@ -102,9 +102,9 @@ func initFlags(flag *pflag.FlagSet) {
 	flag.String("interface", "", "The interface spec to listen for connections on. Default is all.")
 	flag.String("service-name", "app", "The service name identifies the application for instrumentation.")
 
-	flag.String("http-my-server-name", "localhost", "Hostname according to environment.")
-	flag.String("http-office-server-name", "officelocal", "Hostname according to environment.")
-	flag.String("http-tsp-server-name", "tsplocal", "Hostname according to environment.")
+	flag.String("http-my-server-name", "mymove", "Hostname according to environment.")
+	flag.String("http-office-server-name", "office_mymove", "Hostname according to environment.")
+	flag.String("http-tsp-server-name", "tsp_mymove", "Hostname according to environment.")
 	flag.String("http-orders-server-name", "orderslocal", "Hostname according to environment.")
 	flag.String("http-dps-server-name", "dpslocal", "Hostname according to environment.")
 
@@ -135,7 +135,7 @@ func initFlags(flag *pflag.FlagSet) {
 	// Ports to listen to
 	flag.Int("mutual-tls-port", 9443, "The `port` for the mutual TLS listener.")
 	flag.Int("tls-port", 8443, "the `port` for the server side TLS listener.")
-	flag.Int("no-tls-port", 8080, "the `port` for the listener not requiring any TLS.")
+	flag.Int("no-tls-port", 8091, "the `port` for the listener not requiring any TLS.")
 
 	// Login.Gov config
 	flag.String("login-gov-callback-protocol", "https://", "Protocol for non local environments.")

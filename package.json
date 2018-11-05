@@ -74,25 +74,25 @@
   },
   "proxy": {
     "/api": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/internal": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/storage": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/auth": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/devlocal-auth": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/logout": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     },
     "/downloads": {
-      "target": "http://localhost:8080"
+      "target": "http://localhost:8090"
     }
   },
   "version": "0.1.0",
