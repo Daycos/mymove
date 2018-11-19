@@ -1,3 +1,4 @@
+import ReactDOM from 'react-dom';
 import React, { Component } from 'react';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
@@ -174,6 +175,30 @@ class ShipmentInfo extends Component {
   transportShipment = values => this.props.transportShipment(this.props.shipment.id, values);
 
   deliverShipment = values => this.props.deliverShipment(this.props.shipment.id, values);
+
+  // Access Service Agent Panels
+  setEditServiceAgent = editOriginServiceAgent => this.setState({ editOriginServiceAgent });
+
+  scrollToOriginServiceAgentPanel = () => {
+    const domNode = ReactDOM.findDOMNode(this.assignServiceMember.current);
+    domNode.scrollIntoView();
+  };
+  toggleEditOriginServiceAgent = () => {
+    this.scrollToOriginServiceAgentPanel();
+    this.setEditServiceAgent(true);
+  };
+
+  // Access Pre Move Survey Panels
+  setEditPreMoveSurvey = editPreMoveSurvey => this.setState({ editPreMoveSurvey });
+
+  scrollToPreMoveSurveyPanel = () => {
+    const domNode = ReactDOM.findDOMNode(this.enterPreMoveSurvey.current);
+    domNode.scrollIntoView();
+  };
+  toggleEditPreMoveSurvey = () => {
+    this.scrollToPreMoveSurveyPanel();
+    this.setEditPreMoveSurvey(true);
+  };
 
   render() {
     const {

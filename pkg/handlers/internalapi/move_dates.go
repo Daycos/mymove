@@ -98,6 +98,7 @@ func calculateMoveDatesFromShipment(shipment *models.Shipment) (dates.MoveDatesS
 	} else {
 		mostCurrentPickupDate = *shipment.RequestedPickupDate
 	}
+	pickupDates := dates.CreateFutureMoveDates(mostCurrentPickupDate, 1, false, usCalendar)
 
 	var mostCurrentDeliveryDate time.Time
 

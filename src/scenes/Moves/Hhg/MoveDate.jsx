@@ -11,6 +11,7 @@ import Alert from 'shared/Alert';
 import { reduxifyWizardForm } from 'shared/WizardPage/Form';
 import DatePicker from 'scenes/Moves/Hhg/DatePicker';
 import { validateAdditionalFields } from 'shared/JsonSchemaForm';
+import { formatSwaggerDate } from 'shared/formatters';
 
 import { createOrUpdateShipment, getShipment } from 'shared/Entities/modules/shipments';
 

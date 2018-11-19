@@ -301,6 +301,17 @@ func initDatabase(v *viper.Viper, logger *zap.Logger) (*pop.Connection, error) {
 		logger.Error("Failed create DB connection", zap.Error(err))
 		return nil, err
 	}
+	zap.ReplaceGlobals(logger)
+
+	// Honeycomb
+	useHoneycomb := initHoneycomb(v, logger)
+
+	clientAuthSecretKey := v.GetString("client-auth-secret-key")
+
+	loginGovCallbackProtocol := v.GetString("login-gov-callback-protocol")
+	loginGovCallbackPort := v.GetInt("login-gov-callback-port")
+	loginGovSecretKey := v.GetString("login-gov-secret-key")
+	loginGovHostname := v.GetString("login-gov-hostname")
 
 	// Open the connection
 	err = connection.Open()
