@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -24,6 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/transcom/mymove/pkg/auth"
 	"github.com/transcom/mymove/pkg/auth/authentication"
+	"github.com/transcom/mymove/pkg/dpsauth"
 	"github.com/transcom/mymove/pkg/handlers"
 	"github.com/transcom/mymove/pkg/handlers/dpsapi"
 	"github.com/transcom/mymove/pkg/handlers/internalapi"
@@ -105,6 +108,15 @@ func initFlags(flag *pflag.FlagSet) {
 	flag.String("http-orders-server-name", "orderslocal", "Hostname according to environment.")
 	flag.String("http-dps-server-name", "dpslocal", "Hostname according to environment.")
 
+	// SDDC + DPS Auth config
+	flag.String("http-sddc-server-name", "sddclocal", "Hostname according to envrionment.")
+	flag.String("http-sddc-protocol", "https", "Protocol for sddc")
+	flag.String("http-sddc-port", "", "The port for sddc")
+	flag.String("dps-auth-secret-key", "", "DPS auth JWT secret key")
+	flag.String("dps-redirect-url", "", "DPS url to redirect to")
+	flag.String("dps-cookie-name", "", "Name of the DPS cookie")
+	flag.String("dps-cookie-domain", "sddclocal", "Domain of the DPS cookie")
+
 	// Initialize Swagger
 	flag.String("swagger", "swagger/api.yaml", "The location of the public API swagger definition")
 	flag.String("internal-swagger", "swagger/internal.yaml", "The location of the internal API swagger definition")
@@ -145,6 +157,9 @@ func initFlags(flag *pflag.FlagSet) {
 	flag.String("here-maps-app-id", "", "HERE maps App ID for this application")
 	flag.String("here-maps-app-code", "", "HERE maps App API code")
 
+	// EDI Invoice Config
+	flag.Bool("send-prod-invoice", false, "Flag (bool) for EDI Invoices to signify if they should go to production GEX")
+
 	flag.String("storage-backend", "filesystem", "Storage backend to use, either filesystem or s3.")
 	flag.String("email-backend", "local", "Email backend to use, either SES or local")
 	flag.String("aws-s3-bucket-name", "", "S3 bucket used for file storage")
@@ -164,6 +179,13 @@ func initFlags(flag *pflag.FlagSet) {
 
 	// IWS
 	flag.String("iws-rbs-host", "", "Hostname for the IWS RBS")
+
+	// DB Config
+	flag.String("db-name", "dev_db", "Database Name")
+	flag.String("db-host", "localhost", "Database Hostname")
+	flag.Int("db-port", 5432, "Database Port")
+	flag.String("db-user", "postgres", "Database Username")
+	flag.String("db-password", "", "Database Password")
 }
 
 func initDODCertificates(v *viper.Viper, logger *zap.Logger) ([]server.TLSCert, *x509.CertPool, error) {
@@ -231,6 +253,77 @@ func initRealTimeBrokerService(v *viper.Viper, logger *zap.Logger) (*iws.RealTim
 		v.GetString("move-mil-dod-tls-key"))
 }
 
+func initDatabase(v *viper.Viper, logger *zap.Logger) (*pop.Connection, error) {
+
+	env := v.GetString("env")
+	dbName := v.GetString("db-name")
+	dbHost := v.GetString("db-host")
+	dbPort := strconv.Itoa(v.GetInt("db-port"))
+	dbUser := v.GetString("db-user")
+	dbPassword := v.GetString("db-password")
+
+	// Modify DB options by environment
+	dbOptions := map[string]string{"sslmode": "disable"}
+	if env == "test" {
+		// Leave the test database name hardcoded, since we run tests in the same
+		// environment as development, and it's extra confusing to have to swap env
+		// variables before running tests.
+		dbName = "test_db"
+	} else if env == "container" {
+		// Require sslmode for containers
+		dbOptions["sslmode"] = "require"
+	}
+
+	// Construct a safe URL and log it
+	s := "postgres://%s:%s@%s:%s/%s?sslmode=%s"
+	dbURL := fmt.Sprintf(s, dbUser, "*****", dbHost, dbPort, dbName, dbOptions["sslmode"])
+	logger.Debug("Connecting to the database", zap.String("url", dbURL))
+
+	// Configure DB connection details
+	dbConnectionDetails := pop.ConnectionDetails{
+		Dialect:  "postgres",
+		Database: dbName,
+		Host:     dbHost,
+		Port:     dbPort,
+		User:     dbUser,
+		Password: dbPassword,
+		Options:  dbOptions,
+	}
+	err := dbConnectionDetails.Finalize()
+	if err != nil {
+		logger.Error("Failed to finalize DB connection details", zap.Error(err))
+		return nil, err
+	}
+
+	// Set up the connection
+	connection, err := pop.NewConnection(&dbConnectionDetails)
+	if err != nil {
+		logger.Error("Failed create DB connection", zap.Error(err))
+		return nil, err
+	}
+	zap.ReplaceGlobals(logger)
+
+	// Honeycomb
+	useHoneycomb := initHoneycomb(v, logger)
+
+	clientAuthSecretKey := v.GetString("client-auth-secret-key")
+
+	loginGovCallbackProtocol := v.GetString("login-gov-callback-protocol")
+	loginGovCallbackPort := v.GetInt("login-gov-callback-port")
+	loginGovSecretKey := v.GetString("login-gov-secret-key")
+	loginGovHostname := v.GetString("login-gov-hostname")
+
+	// Open the connection
+	err = connection.Open()
+	if err != nil {
+		logger.Error("Failed to open DB connection", zap.Error(err))
+		return nil, err
+	}
+
+	// Return the open connection
+	return connection, nil
+}
+
 func main() {
 
 	flag := pflag.CommandLine
@@ -272,12 +365,8 @@ func main() {
 		log.Fatal("Must provide the Login.gov hostname parameter, exiting")
 	}
 
-	//DB connection
-	err = pop.AddLookupPaths(v.GetString("config-dir"))
-	if err != nil {
-		logger.Fatal("Adding Pop config path", zap.Error(err))
-	}
-	dbConnection, err := pop.Connect(env)
+	// Create a connection to the DB
+	dbConnection, err := initDatabase(v, logger)
 	if err != nil {
 		logger.Fatal("Connecting to DB", zap.Error(err))
 	}
@@ -339,6 +428,9 @@ func main() {
 	routePlanner := initRoutePlanner(v, logger)
 	handlerContext.SetPlanner(routePlanner)
 
+	// Set SendProductionInvoice for ediinvoice
+	handlerContext.SetSendProductionInvoice(v.GetBool("send-prod-invoice"))
+
 	storageBackend := v.GetString("storage-backend")
 
 	var storer storage.FileStorer
@@ -372,6 +464,19 @@ func main() {
 		logger.Fatal("Could not instantiate IWS RBS", zap.Error(err))
 	}
 	handlerContext.SetIWSRealTimeBrokerService(*rbs)
+
+	sddcHostname := v.GetString("http-sddc-server-name")
+	dpsAuthSecretKey := v.GetString("dps-auth-secret-key")
+	handlerContext.SetDPSAuthParams(
+		dpsauth.Params{
+			SDDCProtocol:   v.GetString("http-sddc-protocol"),
+			SDDCHostname:   sddcHostname,
+			SDDCPort:       v.GetString("http-sddc-port"),
+			SecretKey:      dpsAuthSecretKey,
+			DPSRedirectURL: v.GetString("dps-redirect-url"),
+			CookieName:     v.GetString("dps-cookie-name"),
+		},
+	)
 
 	// Base routes
 	site := goji.NewMux()
@@ -409,6 +514,13 @@ func main() {
 	dpsMux.Handle(pat.Get("/docs"), fileHandler(path.Join(build, "swagger-ui", "dps.html")))
 	dpsMux.Handle(pat.New("/*"), dpsapi.NewDPSAPIHandler(handlerContext))
 	site.Handle(pat.New("/dps/v0/*"), dpsMux)
+
+	sddcDPSMux := goji.SubMux()
+	sddcDetectionMiddleware := auth.HostnameDetectorMiddleware(logger, sddcHostname)
+	sddcDPSMux.Use(sddcDetectionMiddleware)
+	sddcDPSMux.Use(noCacheMiddleware)
+	site.Handle(pat.New("/dps_auth/*"), sddcDPSMux)
+	sddcDPSMux.Handle(pat.Get("/set_cookie"), dpsauth.NewSetCookieHandler(logger, dpsAuthSecretKey, v.GetString("dps-cookie-domain")))
 
 	root := goji.NewMux()
 	root.Use(sessionCookieMiddleware)

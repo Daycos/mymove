@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 
 import { getInternalSwaggerDefinition } from 'shared/Swagger/selectors';
 import { getShipment, selectShipment } from 'shared/Entities/modules/shipments';
-import { getMove } from 'shared/Entities/modules/moves';
+import { getMove, selectMove } from 'shared/Entities/modules/moves';
 import { getCurrentShipmentID } from 'shared/UI/ducks';
 
 import { moveIsApproved, lastMoveIsCanceled } from 'scenes/Moves/ducks';
@@ -27,6 +27,13 @@ export class Summary extends Component {
       this.props.onDidMount();
     }
   }
+  componentDidUpdate(prevProps) {
+    // Only check entitlement for PPMs, not HHGs
+    if (prevProps.currentPpm !== this.props.currentPpm) {
+      this.props.onCheckEntitlement(this.props.match.params.moveId);
+    }
+  }
+
   render() {
     const {
       currentMove,
@@ -40,6 +47,7 @@ export class Summary extends Component {
       moveIsApproved,
       serviceMember,
       entitlement,
+      isHHGPPMComboMove,
     } = this.props;
 
     const currentStation = get(serviceMember, 'current_station');
@@ -69,27 +77,35 @@ export class Summary extends Component {
             </Alert>
           )}
 
-        <ServiceMemberSummary
-          orders={currentOrders}
-          backupContacts={currentBackupContacts}
-          serviceMember={serviceMember}
-          schemaRank={schemaRank}
-          schemaAffiliation={schemaAffiliation}
-          schemaOrdersType={schemaOrdersType}
-          moveIsApproved={moveIsApproved}
-          editOrdersPath={editOrdersPath}
-        />
+        {!isHHGPPMComboMove && (
+          <ServiceMemberSummary
+            orders={currentOrders}
+            backupContacts={currentBackupContacts}
+            serviceMember={serviceMember}
+            schemaRank={schemaRank}
+            schemaAffiliation={schemaAffiliation}
+            schemaOrdersType={schemaOrdersType}
+            moveIsApproved={moveIsApproved}
+            editOrdersPath={editOrdersPath}
+          />
+        )}
 
         {currentPpm && <PPMShipmentSummary ppm={currentPpm} movePath={rootAddressWithMoveId} />}
-        {currentShipment && (
-          <HHGShipmentSummary shipment={currentShipment} movePath={rootAddressWithMoveId} entitlements={entitlement} />
-        )}
-        {moveIsApproved && (
-          <div className="approved-edit-warning">
-            *To change these fields, contact your local PPPO office at {get(currentStation, 'name')}{' '}
-            {stationPhone ? ` at ${stationPhone}` : ''}.
-          </div>
-        )}
+        {currentShipment &&
+          !isHHGPPMComboMove && (
+            <HHGShipmentSummary
+              shipment={currentShipment}
+              movePath={rootAddressWithMoveId}
+              entitlements={entitlement}
+            />
+          )}
+        {moveIsApproved &&
+          !isHHGPPMComboMove && (
+            <div className="approved-edit-warning">
+              *To change these fields, contact your local PPPO office at {get(currentStation, 'name')}{' '}
+              {stationPhone ? ` at ${stationPhone}` : ''}.
+            </div>
+          )}
       </Fragment>
     );
   }
@@ -97,7 +113,7 @@ export class Summary extends Component {
 
 Summary.propTypes = {
   currentBackupContacts: PropTypes.array,
-  currentMove: PropTypes.object,
+  getCurrentMove: PropTypes.func,
   currentOrders: PropTypes.object,
   currentPpm: PropTypes.object,
   currentShipment: PropTypes.object,
@@ -106,6 +122,7 @@ Summary.propTypes = {
   moveIsApproved: PropTypes.bool,
   lastMoveIsCanceled: PropTypes.bool,
   error: PropTypes.object,
+  isHHGPPMComboMove: PropTypes.bool,
 };
 
 function mapStateToProps(state, ownProps) {
@@ -113,7 +130,7 @@ function mapStateToProps(state, ownProps) {
     currentPpm: state.ppm.currentPpm,
     currentShipment: selectShipment(state, getCurrentShipmentID(state)),
     serviceMember: state.serviceMember.currentServiceMember,
-    currentMove: getMove(state, ownProps.match.params.moveId),
+    currentMove: selectMove(state, ownProps.match.params.moveId),
     currentBackupContacts: state.serviceMember.currentBackupContacts,
     currentOrders: state.orders.currentOrders,
     schemaRank: getInternalSwaggerDefinition(state, 'ServiceMemberRank'),
@@ -123,6 +140,7 @@ function mapStateToProps(state, ownProps) {
     lastMoveIsCanceled: lastMoveIsCanceled(state),
     reviewState: state.review,
     entitlement: loadEntitlementsFromState(state),
+    isHHGPPMComboMove: get(state, 'moves.currentMove.selected_move_type') === 'HHG_PPM',
   };
 }
 function mapDispatchToProps(dispatch, ownProps) {
@@ -134,7 +152,9 @@ function mapDispatchToProps(dispatch, ownProps) {
           dispatch(getShipment('Summary.getShipment', shipment.id));
         });
       });
-      dispatch(checkEntitlement(moveID));
+    },
+    onCheckEntitlement: moveId => {
+      dispatch(checkEntitlement(moveId));
     },
   };
 }

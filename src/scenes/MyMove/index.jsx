@@ -9,9 +9,9 @@ import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
 
 import Alert from 'shared/Alert';
+import Authorization from 'shared/User/Authorization';
 import Feedback from 'scenes/Feedback';
 import Landing from 'scenes/Landing';
-import Shipments from 'scenes/Shipments';
 import SubmittedFeedback from 'scenes/SubmittedFeedback';
 import Edit from 'scenes/Review/Edit';
 import EditProfile from 'scenes/Review/EditProfile';
@@ -20,6 +20,7 @@ import EditContactInfo from 'scenes/Review/EditContactInfo';
 import EditOrders from 'scenes/Review/EditOrders';
 import EditDateAndLocation from 'scenes/Review/EditDateAndLocation';
 import EditWeight from 'scenes/Review/EditWeight';
+import EditHHGDates from 'scenes/Review/EditShipment';
 import Header from 'shared/Header/MyMove';
 import PaymentRequest from 'scenes/Moves/Ppm/PaymentRequest';
 import { history } from 'shared/store';
@@ -33,6 +34,7 @@ import { loadLoggedInUser } from 'shared/User/ducks';
 import { loadInternalSchema } from 'shared/Swagger/ducks';
 import FailWhale from 'shared/FailWhale';
 import { no_op } from 'shared/utils';
+import DPSAuthCookie from 'scenes/DPSAuthCookie';
 
 const NoMatch = ({ location }) => (
   <div className="usa-grid">
@@ -75,7 +77,6 @@ export class AppWrapper extends Component {
                   <Switch>
                     <Route exact path="/" component={Landing} />
                     <Route path="/submitted" component={SubmittedFeedback} />
-                    <Route path="/shipments/:shipmentsStatus" component={Shipments} />
                     <Route path="/feedback" component={Feedback} />
                     <Route path="/privacy-and-security-policy" component={PrivacyPolicyStatement} />
                     <Route path="/accessibility" component={AccessibilityStatement} />
@@ -84,10 +85,17 @@ export class AppWrapper extends Component {
                     <PrivateRoute exact path="/moves/review/edit-profile" component={EditProfile} />
                     <PrivateRoute exact path="/moves/review/edit-backup-contact" component={EditBackupContact} />
                     <PrivateRoute exact path="/moves/review/edit-contact-info" component={EditContactInfo} />
+
                     <PrivateRoute path="/moves/:moveId/review/edit-orders" component={EditOrders} />
                     <PrivateRoute path="/moves/:moveId/review/edit-date-and-location" component={EditDateAndLocation} />
                     <PrivateRoute path="/moves/:moveId/review/edit-weight" component={EditWeight} />
+
+                    <PrivateRoute path="/shipments/:shipmentId/review/edit-hhg-dates" component={EditHHGDates} />
+                    {/* <PrivateRoute path="/moves/:moveId/review/edit-hhg-locations" component={EditHHGLocations} /> */}
+                    {/* <PrivateRoute path="/moves/:moveId/review/edit-hhg-weights" component={EditHHGWeights} /> */}
+
                     <PrivateRoute path="/moves/:moveId/request-payment" component={PaymentRequest} />
+                    <PrivateRoute path="/dps_cookie" component={Authorization(DPSAuthCookie, 'dps')} />
                     <Route component={NoMatch} />
                   </Switch>
                 )}

@@ -16,6 +16,10 @@
   margin: 0 0.3em 0 0.5em;
 }
 
+.icon-grey {
+  color: rgba(171,171,171,1.00);
+}
+
 .form-column {
   display: inline-block;
   width: 45%;
@@ -435,4 +439,8 @@ head .panel-subhead {
 }
 .expense-panel table > tbody > tr > td:last-child {
   font-weight: normal;
+}
+.notes {
+  white-space: normal;
+  word-wrap: break-word;
 }

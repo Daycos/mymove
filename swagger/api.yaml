@@ -173,6 +173,19 @@ definitions:
       SUBMITTED: Submitted
       APPROVED: Approved
       INVOICED: Invoiced
+  InvoiceStatus:
+    type: string
+    title: Status
+    enum:
+      - DRAFT
+      - IN_PROCESS
+      - SUBMITTED
+      - SUBMISSION_FAILURE
+    x-display-value:
+      DRAFT: Draft
+      IN_PROCESS: In Process
+      SUBMITTED: Submitted
+      SUBMISSION_FAILURE: Submission Failure
   Tariff400ngItems:
     type: array
     items:
@@ -210,6 +223,31 @@ definitions:
         type: string
         title: Reference Code
         example: Point Schedule
+      created_at:
+        type: string
+        format: date-time
+      updated_at:
+        type: string
+        format: date-time
+      requires_pre_approval:
+        type: boolean
+        title: Requires pre-approval
+  Invoice:
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+        example: c56a4180-65aa-42ec-a945-5fd21dec0538
+      status:
+        $ref: '#/definitions/InvoiceStatus'
+      invoiced_date:
+        type: string
+        title: Invoiced date
+        format: date-time
+      invoice_number:
+        type: string
+        example: '12432'
       created_at:
         type: string
         format: date-time
@@ -313,8 +351,8 @@ definitions:
         type: string
         title: Country
         x-nullable: true
-        example: 'United States'
-        default: United States
+        example: 'USA'
+        default: USA
     required:
       - street_address_1
       - state
@@ -622,12 +660,18 @@ definitions:
     enum:
       - HHG
       - PPM
-      - COMBO
+      - UB
+      - POV
+      - NTS
+      - HHG_PPM
     x-nullable: true
     x-display-value:
       HHG: Household Goods Move
       PPM: Personal Procured Move
-      COMBO: Both HHG and PPM
+      UB: Unaccompanied Baggage
+      POV: Privately-Owned Vehicle
+      NTS: Non-Temporary Storage
+      HHG_PPM: Both HHG and PPM
   ServiceAgentRole:
     type: string
     title: Service Agent Role
@@ -1105,6 +1149,72 @@ definitions:
           IN_PERSON: In person
           PHONE: Phone
           VIDEO: Video
+  TransportationServiceProvider:
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+        example: 2a6a4180-65aa-42ec-a945-5fd21dec0538
+        readOnly: true
+      standard_carrier_alpha_code:
+        type: string
+        example: '51980581983'
+        x-nullable: true
+      enrolled:
+        type: boolean
+        default: false
+      name:
+        type: string
+        example: 'EXTRA Good TSP'
+        x-nullable: true
+      poc_general_name:
+        type: string
+        example: 'Jon Bon Jovi'
+        x-nullable: true
+      poc_general_email:
+        type: string
+        format: x-email
+        pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        description: Email used to contact shipping agent
+        example: jenny_tsp@example.com
+        x-nullable: true
+        title: Email
+      poc_general_phone:
+        type: string
+        format: telephone
+        pattern: '^[2-9]\d{2}-\d{3}-\d{4}$'
+        example: 303-867-5309
+        x-nullable: true
+        title: Phone Number
+      poc_claims_name:
+        type: string
+        example: 'Tupac Shakur'
+        x-nullable: true
+      poc_claims_email:
+        type: string
+        format: x-email
+        pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        description: Email used to contact shipping agent
+        example: tupac_tsp@example.com
+        x-nullable: true
+        title: Email
+      poc_claims_phone:
+        type: string
+        format: telephone
+        pattern: '^[2-9]\d{2}-\d{3}-\d{4}$'
+        example: 404-827-5309
+        x-nullable: true
+        title: Phone Number
+      created_at:
+        type: string
+        format: date-time
+      updated_at:
+        type: string
+        format: date-time
+    required:
+    - standard_carrier_alpha_code
+    - enrolled
   IndexServiceAgents:
     type: array
     items:
@@ -2191,6 +2301,35 @@ paths:
           description: not authorized to add documents to this shipment
         417:
           description: failed to meet data requirements for GBL form to be built
+        500:
+          description: server error
+  /shipments/accessorials/{invoiceId}:
+    get:
+      summary: Get invoice for a shipment
+      description: Get invoice for a shipment
+      operationId: getInvoice
+      tags:
+        - accessorials
+      parameters:
+        - in: path
+          name: invoiceId
+          type: string
+          format: uuid
+          required: true
+          description: UUID of the invoice to fetch
+      responses:
+        200:
+          description: returns invoice for an invoiceId
+          schema:
+            $ref: '#/definitions/Invoice'
+        400:
+          description: invalid request
+        401:
+          description: User not authenticated to get invoice
+        403:
+          description: User not permitted to get invoice for this shipment
+        404:
+          description: Invoice UUID not found in system
         500:
           description: server error
   /shipments/{shipmentId}/accessorials:
