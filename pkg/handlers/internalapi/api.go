@@ -29,6 +29,7 @@ func NewInternalAPIHandler(context handlers.HandlerContext) http.Handler {
 	internalAPI.PpmCreatePersonallyProcuredMoveHandler = CreatePersonallyProcuredMoveHandler{context}
 	internalAPI.PpmIndexPersonallyProcuredMovesHandler = IndexPersonallyProcuredMovesHandler{context}
 	internalAPI.PpmPatchPersonallyProcuredMoveHandler = PatchPersonallyProcuredMoveHandler{context}
+	internalAPI.PpmSubmitPersonallyProcuredMoveHandler = SubmitPersonallyProcuredMoveHandler{context}
 	internalAPI.PpmShowPPMEstimateHandler = ShowPPMEstimateHandler{context}
 	internalAPI.PpmShowPPMSitEstimateHandler = ShowPPMSitEstimateHandler{context}
 	internalAPI.PpmShowPPMIncentiveHandler = ShowPPMIncentiveHandler{context}
@@ -44,7 +45,6 @@ func NewInternalAPIHandler(context handlers.HandlerContext) http.Handler {
 	internalAPI.OrdersUpdateOrdersHandler = UpdateOrdersHandler{context}
 	internalAPI.OrdersShowOrdersHandler = ShowOrdersHandler{context}
 
-	internalAPI.MovesCreateMoveHandler = CreateMoveHandler{context}
 	internalAPI.MovesPatchMoveHandler = PatchMoveHandler{context}
 	internalAPI.MovesShowMoveHandler = ShowMoveHandler{context}
 	internalAPI.MovesSubmitMoveForApprovalHandler = SubmitMoveHandler{context}

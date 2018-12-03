@@ -103,7 +103,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Awaiting approval</div>');
+      ).toEqual('<div class="title">Next Step: Wait for approval</div>');
     });
   });
   describe('when a move is in approved state but ppm is submitted state', () => {
@@ -136,7 +136,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Awaiting approval</div>');
+      ).toEqual('<div class="title">Next Step: Wait for approval</div>');
     });
   });
   describe('when a move and ppm are in approved state', () => {
@@ -421,7 +421,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Complete your customer satisfaction survey</div>');
+      ).toEqual('<div class="title">Next Step: Survey</div>');
     });
   });
   describe('when an hhg is in completed state', () => {
@@ -447,7 +447,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Complete your customer satisfaction survey</div>');
+      ).toEqual('<div class="title">Next Step: Survey</div>');
     });
   });
 });
