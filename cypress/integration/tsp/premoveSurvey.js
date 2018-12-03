@@ -1,36 +1,35 @@
 import { tspUserVerifiesShipmentStatus } from '../../support/testTspStatus';
 
 /* global cy */
-describe('TSP User Completes Premove Survey', function() {
+describe('TSP User And the Premove Survey Button', function() {
   beforeEach(() => {
     cy.signIntoTSP();
   });
 
-  it('tsp user uses action button to enter premove survey', function() {
+  it('tsp user uses action button to enter premove survey for accepted shipment', function() {
+    tspUserGoesToShipment('queues/accepted', 'ACC4PM');
     tspUserClicksEnterPreMoveSurvey();
     tspUserFillsInPreMoveSurveyWizard();
+    tspUserVerifiesPreMoveSurveyEntered();
+    tspUserVerifiesShipmentStatus('Shipment accepted');
+  });
+
+  it('tsp user uses action button to enter premove survey for approved shipment', function() {
+    tspUserGoesToShipment('queues/approved', 'ENTPMS');
+    tspUserClicksEnterPreMoveSurvey();
+    tspUserFillsInPreMoveSurveyWizard();
+    tspUserVerifiesPreMoveSurveyEntered();
+    tspUserVerifiesShipmentStatus('Pre-move survey complete');
+  });
+
+  it('tsp user does not see premove survey button if approved, but already completed', function() {
+    tspUserGoesToShipment('queues/approved', 'APPPMS');
     tspUserVerifiesPreMoveSurveyEntered();
     tspUserVerifiesShipmentStatus('Pre-move survey complete');
   });
 });
 
 function tspUserClicksEnterPreMoveSurvey() {
-  // Open approved shipments queue
-  cy.visit('/queues/approved');
-
-  // Find shipment and open it
-  cy
-    .get('div')
-    .contains('ENTPMS')
-    .dblclick();
-
-  cy.location().should(loc => {
-    expect(loc.pathname).to.match(/^\/shipments\/[^/]+/);
-  });
-
-  // Status should be Approved for "Enter pre-move survey" button to exist
-  tspUserVerifiesShipmentStatus('Awaiting pre-move survey');
-
   cy
     .get('button')
     .contains('Enter pre-move survey')
@@ -138,41 +137,16 @@ function tspUserVerifiesPreMoveSurveyEntered() {
   cy.get('button').should('not.contain', 'Enter pre-move survey');
 }
 
-function tspUserClicksEnterPreMoveSurvey() {
-  // Open approved shipments queue
-  cy.visit('/queues/approved');
+function tspUserGoesToShipment(queue, locator) {
+  cy.visit(queue);
 
   // Find shipment and open it
   cy
     .get('div')
-    .contains('ENTPMS')
+    .contains(locator)
     .dblclick();
 
   cy.location().should(loc => {
     expect(loc.pathname).to.match(/^\/shipments\/[^/]+/);
   });
-
-  // Status should be Approved for "Enter pre-move survey" button to exist
-  cy
-    .get('li')
-    .get('b')
-    .contains('Approved');
-
-  cy
-    .get('button')
-    .contains('Enter pre-move survey')
-    .should('be.enabled');
-
-  cy
-    .get('button')
-    .contains('Enter pre-move survey')
-    .click();
-}
-
-function tspUserFillsInPreMoveSurvey() {
-  fillAndSavePremoveSurvey();
-}
-
-function tspUserVerifiesPreMoveSurveyEntered() {
-  cy.get('button').should('not.contain', 'Enter pre-move survey');
 }
