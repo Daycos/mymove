@@ -87,7 +87,7 @@ function draftMove(userId) {
 function ppmSubmitted(userId) {
   cy.signInAsUser(userId);
   cy.contains('Move your own stuff (PPM)');
-  cy.contains('Next Step: Awaiting approval');
+  cy.contains('Next Step: Wait for approval');
   cy.should('not.contain', 'Add PPM Shipment');
   cy.logout();
 }
@@ -111,7 +111,7 @@ function hhgMoveSummary(userId) {
 function hhgDeliveredOrCompletedMoveSummary(userId) {
   cy.signInAsUser(userId);
   cy.contains('Government Movers and Packers (HHG)');
-  cy.contains('Next Step: Complete your customer satisfaction survey');
+  cy.contains('Next Step: Survey');
   cy.logout();
 }
 

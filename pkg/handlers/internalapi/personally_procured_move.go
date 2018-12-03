@@ -39,11 +39,11 @@ func payloadForPPMModel(storer storage.FileStorer, personallyProcuredMove models
 		HasSit:                        personallyProcuredMove.HasSit,
 		DaysInStorage:                 personallyProcuredMove.DaysInStorage,
 		EstimatedStorageReimbursement: personallyProcuredMove.EstimatedStorageReimbursement,
-		Status:              internalmessages.PPMStatus(personallyProcuredMove.Status),
-		HasRequestedAdvance: &personallyProcuredMove.HasRequestedAdvance,
-		Advance:             payloadForReimbursementModel(personallyProcuredMove.Advance),
-		AdvanceWorksheet:    documentPayload,
-		Mileage:             personallyProcuredMove.Mileage,
+		Status:                        internalmessages.PPMStatus(personallyProcuredMove.Status),
+		HasRequestedAdvance:           &personallyProcuredMove.HasRequestedAdvance,
+		Advance:                       payloadForReimbursementModel(personallyProcuredMove.Advance),
+		AdvanceWorksheet:              documentPayload,
+		Mileage:                       personallyProcuredMove.Mileage,
 	}
 	if personallyProcuredMove.IncentiveEstimateMin != nil {
 		min := (*personallyProcuredMove.IncentiveEstimateMin).Int64()
@@ -289,6 +289,40 @@ func (h PatchPersonallyProcuredMoveHandler) ppmNeedsEstimatesRecalculated(ppm *m
 	}
 
 	return needsUpdate
+}
+
+// SubmitPersonallyProcuredMoveHandler Submits a PPM
+type SubmitPersonallyProcuredMoveHandler struct {
+	handlers.HandlerContext
+}
+
+// Handle Submits a PPM to change its status to SUBMITTED
+func (h SubmitPersonallyProcuredMoveHandler) Handle(params ppmop.SubmitPersonallyProcuredMoveParams) middleware.Responder {
+	session := auth.SessionFromRequestContext(params.HTTPRequest)
+
+	// #nosec UUID is pattern matched by swagger and will be ok
+	ppmID, _ := uuid.FromString(params.PersonallyProcuredMoveID.String())
+
+	ppm, err := models.FetchPersonallyProcuredMove(h.DB(), session, ppmID)
+
+	if err != nil {
+		return handlers.ResponseForError(h.Logger(), err)
+	}
+
+	err = ppm.Submit()
+
+	verrs, err := models.SavePersonallyProcuredMove(h.DB(), ppm)
+	if err != nil || verrs.HasAny() {
+		return handlers.ResponseForVErrors(h.Logger(), verrs, err)
+	}
+
+	ppmPayload, err := payloadForPPMModel(h.FileStorer(), *ppm)
+
+	if err != nil {
+		return handlers.ResponseForError(h.Logger(), err)
+	}
+
+	return ppmop.NewSubmitPersonallyProcuredMoveOK().WithPayload(ppmPayload)
 }
 
 func stringForComparison(previousValue, newValue *string) (value string, valueChanged bool, canCompare bool) {

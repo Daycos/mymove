@@ -289,6 +289,12 @@ definitions:
         description: 2nd Tariff400ngItem base quantity
         minimum: 0
         example: 10000
+      applied_rate:
+        type: integer
+        format: millicents
+        minimum: 0
+        x-nullable: true
+        description: unit is millicents
       location:
         $ref: '#/definitions/ShipmentLineItemLocation'
       notes:
@@ -298,6 +304,13 @@ definitions:
         example: Mounted deer head measures 23" x 34" x 27"; crate will be 16.7 cu ft
       status:
         $ref: '#/definitions/ShipmentLineItemStatus'
+      amount_cents:
+        type: integer
+        format: cents
+        minimum: 1
+        title: Amount
+        description: unit is cents
+        x-nullable: true
       submitted_date:
         type: string
         title: Submitted Date
