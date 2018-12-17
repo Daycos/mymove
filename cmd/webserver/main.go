@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -196,10 +196,6 @@ func initFlags(flag *pflag.FlagSet) {
 	flag.String("aws-s3-key-namespace", "", "Key prefix for all objects written to S3")
 	flag.String("aws-ses-region", "", "AWS region used for SES")
 
-	// New Relic Config
-	flag.String("new-relic-application-id", "", "App ID for New Relic Browser")
-	flag.String("new-relic-license-key", "", "License key for New Relic Browser")
-
 	// Honeycomb Config
 	flag.Bool("honeycomb-enabled", false, "Honeycomb enabled")
 	flag.String("honeycomb-api-host", "https://api.honeycomb.io/", "API Host for Honeycomb")
@@ -335,17 +331,6 @@ func initDatabase(v *viper.Viper, logger *zap.Logger) (*pop.Connection, error) {
 		logger.Error("Failed create DB connection", zap.Error(err))
 		return nil, err
 	}
-	zap.ReplaceGlobals(logger)
-
-	// Honeycomb
-	useHoneycomb := initHoneycomb(v, logger)
-
-	clientAuthSecretKey := v.GetString("client-auth-secret-key")
-
-	loginGovCallbackProtocol := v.GetString("login-gov-callback-protocol")
-	loginGovCallbackPort := v.GetInt("login-gov-callback-port")
-	loginGovSecretKey := v.GetString("login-gov-secret-key")
-	loginGovHostname := v.GetString("login-gov-hostname")
 
 	// Open the connection
 	err = connection.Open()
@@ -583,7 +568,20 @@ func main() {
 	site.Use(limitBodySizeMiddleware)
 
 	// Stub health check
-	site.HandleFunc(pat.Get("/health"), func(w http.ResponseWriter, r *http.Request) {})
+	site.HandleFunc(pat.Get("/health"), func(w http.ResponseWriter, r *http.Request) {
+		err := dbConnection.RawQuery("SELECT 1;").Exec()
+		if err != nil {
+			logger.Error("Failed database health check", zap.Error(err))
+		}
+		err = json.NewEncoder(w).Encode(map[string]interface{}{
+			"gitBranch": gitBranch,
+			"gitCommit": gitCommit,
+			"database":  err == nil,
+		})
+		if err != nil {
+			logger.Error("Failed encoding health check response", zap.Error(err))
+		}
+	})
 
 	// Allow public content through without any auth or app checks
 	site.Handle(pat.Get("/static/*"), clientHandler)
@@ -625,11 +623,11 @@ func main() {
 	if len(gitBranch) > 0 && len(gitCommit) > 0 {
 		root.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, span := beeline.StartSpan(r.Context(), "BuildVariablesMiddleware")
-				span.AddField("git.branch", gitBranch)
-				span.AddField("git.commit", gitCommit)
-				span.Send()
-				next.ServeHTTP(w, r)
+				ctx, span := beeline.StartSpan(r.Context(), "BuildVariablesMiddleware")
+				defer span.Send()
+				span.AddTraceField("git.branch", gitBranch)
+				span.AddTraceField("git.commit", gitCommit)
+				next.ServeHTTP(w, r.WithContext(ctx))
 			})
 		})
 	}
@@ -681,7 +679,7 @@ func main() {
 	}
 
 	// Serve index.html to all requests that haven't matches a previous route,
-	root.HandleFunc(pat.Get("/*"), indexHandler(build, v.GetString("new-relic-application-id"), v.GetString("new-relic-license-key"), logger))
+	root.HandleFunc(pat.Get("/*"), indexHandler(build, logger))
 
 	var httpHandler http.Handler
 	if useHoneycomb {
@@ -746,21 +744,8 @@ func fileHandler(entrypoint string) http.HandlerFunc {
 	}
 }
 
-// indexHandler injects New Relic client code and credentials into index.html
-// and returns a handler that will serve the resulting content
-func indexHandler(buildDir, newRelicApplicationID, newRelicLicenseKey string, logger *zap.Logger) http.HandlerFunc {
-	data := map[string]string{
-		"NewRelicApplicationID": newRelicApplicationID,
-		"NewRelicLicenseKey":    newRelicLicenseKey,
-	}
-	newRelicTemplate, err := template.ParseFiles(path.Join(buildDir, "new_relic.html"))
-	if err != nil {
-		logger.Fatal("could not load new_relic.html template: run make client_build", zap.Error(err))
-	}
-	newRelicHTML := bytes.NewBuffer([]byte{})
-	if err := newRelicTemplate.Execute(newRelicHTML, data); err != nil {
-		logger.Fatal("could not render new_relic.html template", zap.Error(err))
-	}
+// indexHandler returns a handler that will serve the resulting content
+func indexHandler(buildDir string, logger *zap.Logger) http.HandlerFunc {
 
 	indexPath := path.Join(buildDir, "index.html")
 	// #nosec - indexPath does not come from user input
@@ -768,7 +753,6 @@ func indexHandler(buildDir, newRelicApplicationID, newRelicLicenseKey string, lo
 	if err != nil {
 		logger.Fatal("could not read index.html template: run make client_build", zap.Error(err))
 	}
-	mergedHTML := bytes.Replace(indexHTML, []byte(`<script type="new-relic-placeholder"></script>`), newRelicHTML.Bytes(), 1)
 
 	stat, err := os.Stat(indexPath)
 	if err != nil {
@@ -776,6 +760,6 @@ func indexHandler(buildDir, newRelicApplicationID, newRelicLicenseKey string, lo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "index.html", stat.ModTime(), bytes.NewReader(mergedHTML))
+		http.ServeContent(w, r, "index.html", stat.ModTime(), bytes.NewReader(indexHTML))
 	}
 }
