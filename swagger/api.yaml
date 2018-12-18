@@ -239,8 +239,18 @@ definitions:
         type: string
         format: uuid
         example: c56a4180-65aa-42ec-a945-5fd21dec0538
+      shipment_id:
+        type: string
+        format: uuid
+        example: c56a4180-65aa-42ec-a945-5fd21dec0538
       status:
         $ref: '#/definitions/InvoiceStatus'
+      approver_first_name:
+        type: string
+        example: 'Janine'
+      approver_last_name:
+        type: string
+        example: 'Smith'
       invoiced_date:
         type: string
         title: Invoiced date
@@ -248,12 +258,6 @@ definitions:
       invoice_number:
         type: string
         example: '12432'
-      created_at:
-        type: string
-        format: date-time
-      updated_at:
-        type: string
-        format: date-time
   ShipmentLineItems:
     type: array
     items:
@@ -319,6 +323,7 @@ definitions:
         type: string
         title: Approved Date
         format: date-time
+        x-nullable: true
       created_at:
         type: string
         format: date-time
@@ -1100,6 +1105,10 @@ definitions:
         x-nullable: true
         x-formatting: weight
         title: Tare
+      pm_survey_completed_at:
+        type: string
+        format: date-time
+        x-nullable: true
       pm_survey_conducted_date:
         type: string
         format: date
@@ -2129,6 +2138,33 @@ paths:
           description: no service agent found with that UUID
         500:
           description: server error
+  /shipment/{shipmentId}/completePmSurvey:
+    post:
+      summary: Completes a pre-move survey on a shipment
+      description: Sets the pre-move survey as completed. Completion date will be recorded on shipment.
+      operationId: completePmSurvey
+      tags:
+      - shipments
+      parameters:
+      - name: shipmentId
+        in: path
+        type: string
+        format: uuid
+        required: true
+        description: UUID of the move
+      responses:
+        200:
+          description: returns updated shipment object
+          schema:
+            $ref: '#/definitions/Shipment'
+        400:
+          description: invalid request
+        401:
+          description: must be authenticated to use this endpoint
+        403:
+          description: not authorized to complete this pre-move survey
+        500:
+          description: server error
   /shipments/{shipmentId}/accept:
     post:
       summary: Accepts an awarded shipment
@@ -2227,7 +2263,7 @@ paths:
         403:
           description: not authorized to accept this shipment
         409:
-          description: the shipment is not in a state to be accepted
+          description: the shipment is not in a state to be delivered
           schema:
             $ref: '#/definitions/Shipment'
         500:
