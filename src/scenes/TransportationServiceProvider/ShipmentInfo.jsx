@@ -1,4 +1,3 @@
-import ReactDOM from 'react-dom';
 import React, { Component } from 'react';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
@@ -40,6 +39,7 @@ import faEmail from '@fortawesome/fontawesome-free-solid/faEnvelope';
 import faExternalLinkAlt from '@fortawesome/fontawesome-free-solid/faExternalLinkAlt';
 import {
   loadShipmentDependencies,
+  completePmSurvey,
   patchShipment,
   acceptShipment,
   rejectShipment,
@@ -54,6 +54,7 @@ import LocationsContainer from 'shared/LocationsPanel/LocationsContainer';
 import FormButton from './FormButton';
 import CustomerInfo from './CustomerInfo';
 import PreApprovalPanel from 'shared/PreApprovalRequest/PreApprovalPanel.jsx';
+import InvoicePanel from 'shared/Invoice/InvoicePanel.jsx';
 import PickupForm from './PickupForm';
 import PremoveSurveyForm from './PremoveSurveyForm';
 import ServiceAgentForm from './ServiceAgentForm';
@@ -123,7 +124,7 @@ const DeliveryDateForm = reduxForm({ form: 'deliver_shipment' })(DeliveryDateFor
 
 // Action Buttons Conditions
 const hasOriginServiceAgent = (serviceAgents = []) => serviceAgents.some(agent => agent.role === 'ORIGIN');
-const hasPreMoveSurvey = (shipment = {}) => shipment.pm_survey_planned_pack_date;
+const hasPreMoveSurvey = (shipment = {}) => shipment.pm_survey_completed_at;
 
 class ShipmentInfo extends Component {
   constructor(props) {
@@ -164,7 +165,13 @@ class ShipmentInfo extends Component {
     });
   };
 
-  enterPreMoveSurvey = values => this.props.patchShipment(this.props.shipment.id, values);
+  enterPreMoveSurvey = values => {
+    this.props.patchShipment(this.props.shipment.id, values).then(() => {
+      if (this.props.shipment.pm_survey_completed_at === undefined) {
+        this.props.completePmSurvey(this.props.shipment.id);
+      }
+    });
+  };
 
   editServiceAgents = values => {
     values['destination_service_agent']['role'] = 'DESTINATION';
@@ -174,30 +181,10 @@ class ShipmentInfo extends Component {
 
   transportShipment = values => this.props.transportShipment(this.props.shipment.id, values);
 
-  deliverShipment = values => this.props.deliverShipment(this.props.shipment.id, values);
-
-  // Access Service Agent Panels
-  setEditServiceAgent = editOriginServiceAgent => this.setState({ editOriginServiceAgent });
-
-  scrollToOriginServiceAgentPanel = () => {
-    const domNode = ReactDOM.findDOMNode(this.assignServiceMember.current);
-    domNode.scrollIntoView();
-  };
-  toggleEditOriginServiceAgent = () => {
-    this.scrollToOriginServiceAgentPanel();
-    this.setEditServiceAgent(true);
-  };
-
-  // Access Pre Move Survey Panels
-  setEditPreMoveSurvey = editPreMoveSurvey => this.setState({ editPreMoveSurvey });
-
-  scrollToPreMoveSurveyPanel = () => {
-    const domNode = ReactDOM.findDOMNode(this.enterPreMoveSurvey.current);
-    domNode.scrollIntoView();
-  };
-  toggleEditPreMoveSurvey = () => {
-    this.scrollToPreMoveSurveyPanel();
-    this.setEditPreMoveSurvey(true);
+  deliverShipment = values => {
+    this.props.deliverShipment(this.props.shipment.id, values).then(() => {
+      this.props.getAllShipmentLineItems(getShipmentLineItemsLabel, this.props.shipment.id);
+    });
   };
 
   render() {
@@ -223,16 +210,10 @@ class ShipmentInfo extends Component {
     const inTransit = shipment.status === 'IN_TRANSIT';
     const delivered = shipment.status === 'DELIVERED';
     const completed = shipment.status === 'COMPLETED';
-    const pmSurveyComplete = Boolean(
-      shipment.pm_survey_conducted_date &&
-        shipment.pm_survey_method &&
-        shipment.pm_survey_planned_pack_date &&
-        shipment.pm_survey_planned_pickup_date &&
-        shipment.pm_survey_planned_delivery_date &&
-        shipment.pm_survey_weight_estimate,
-    );
+    const pmSurveyComplete = Boolean(shipment.pm_survey_completed_at);
     const canAssignServiceAgents = (approved || accepted) && !hasOriginServiceAgent(serviceAgents);
-    const canEnterPreMoveSurvey = approved && hasOriginServiceAgent(serviceAgents) && !hasPreMoveSurvey(shipment);
+    const canEnterPreMoveSurvey =
+      (accepted || approved) && hasOriginServiceAgent(serviceAgents) && !hasPreMoveSurvey(shipment);
     const canEnterPackAndPickup = approved && gblGenerated;
 
     // Some statuses are directly related to the shipment status and some to combo states
@@ -260,7 +241,6 @@ class ShipmentInfo extends Component {
     if (!loadTspDependenciesHasSuccess) {
       return <LoadingPlaceholder />;
     }
-
     return (
       <div>
         <div className="usa-grid grid-wide">
@@ -435,6 +415,8 @@ class ShipmentInfo extends Component {
                   <Weights title="Weights & Items" shipment={this.props.shipment} update={this.props.patchShipment} />
                   <LocationsContainer update={this.props.patchShipment} />
                   <PreApprovalPanel shipmentId={this.props.match.params.shipmentId} />
+                  <InvoicePanel shipmentId={this.props.match.params.shipmentId} shipmentStatus={shipment.status} />
+
                   <TspContainer
                     title="TSP & Servicing Agents"
                     shipment={this.props.shipment}
@@ -511,6 +493,7 @@ const mapDispatchToProps = dispatch =>
   bindActionCreators(
     {
       loadShipmentDependencies,
+      completePmSurvey,
       patchShipment,
       acceptShipment,
       generateGBL,

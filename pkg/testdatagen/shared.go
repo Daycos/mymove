@@ -3,6 +3,7 @@ package testdatagen
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path"
 	"reflect"
@@ -38,6 +39,7 @@ type Assertions struct {
 	Shipment                                 models.Shipment
 	ShipmentLineItem                         models.ShipmentLineItem
 	ShipmentOffer                            models.ShipmentOffer
+	Tariff400ngServiceArea                   models.Tariff400ngServiceArea
 	Tariff400ngItem                          models.Tariff400ngItem
 	Tariff400ngItemRate                      models.Tariff400ngItemRate
 	Tariff400ngZip3                          models.Tariff400ngZip3
@@ -93,6 +95,11 @@ func noErr(err error) {
 	}
 }
 
+// zip5ToZip3 takes a ZIP5 string and returns the ZIP3 representation of it.
+func zip5ToZip3(zip5 string) string {
+	return zip5[0:3]
+}
+
 // isZeroUUID determines whether a UUID is its zero value
 func isZeroUUID(testID uuid.UUID) bool {
 	return testID == uuid.Nil
@@ -104,6 +111,18 @@ func mergeModels(dst, src interface{}) {
 	noErr(
 		mergo.Merge(dst, src, mergo.WithOverride, mergo.WithTransformers(customTransformer{})),
 	)
+}
+
+// Source chars for random string
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+
+// Returns a random alphanumeric string of specified length
+func makeRandomString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return string(b)
 }
 
 func fixture(name string) afero.File {

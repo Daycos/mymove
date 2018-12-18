@@ -59,6 +59,7 @@ type Shipment struct {
 	Move                      Move                     `belongs_to:"move"`
 	ShipmentOffers            ShipmentOffers           `has_many:"shipment_offers" order_by:"created_at desc"`
 	ServiceAgents             ServiceAgents            `has_many:"service_agents" order_by:"created_at desc"`
+	ShipmentLineItems         ShipmentLineItems        `has_many:"shipment_line_items" order_by:"created_at desc"`
 
 	// dates
 	ActualPickupDate     *time.Time `json:"actual_pickup_date" db:"actual_pickup_date"`         // when shipment is scheduled to be picked up by the TSP
@@ -96,6 +97,7 @@ type Shipment struct {
 
 	// pre-move survey
 	PmSurveyConductedDate               *time.Time  `json:"pm_survey_conducted_date" db:"pm_survey_conducted_date"`
+	PmSurveyCompletedAt                 *time.Time  `json:"pm_survey_completed_at" db:"pm_survey_completed_at"`
 	PmSurveyPlannedPackDate             *time.Time  `json:"pm_survey_planned_pack_date" db:"pm_survey_planned_pack_date"`
 	PmSurveyPlannedPickupDate           *time.Time  `json:"pm_survey_planned_pickup_date" db:"pm_survey_planned_pickup_date"`
 	PmSurveyPlannedDeliveryDate         *time.Time  `json:"pm_survey_planned_delivery_date" db:"pm_survey_planned_delivery_date"`
@@ -473,7 +475,8 @@ func FetchShipment(db *pop.Connection, session *auth.Session, id uuid.UUID) (*Sh
 		"Move.Orders.NewDutyStation.Address",
 		"PickupAddress",
 		"SecondaryPickupAddress",
-		"DeliveryAddress").Find(&shipment, id)
+		"DeliveryAddress",
+		"ShipmentOffers").Find(&shipment, id)
 
 	if err != nil {
 		if errors.Cause(err).Error() == recordNotFoundErrorString {
@@ -507,7 +510,8 @@ func FetchShipmentByTSP(tx *pop.Connection, tspID uuid.UUID, shipmentID uuid.UUI
 		"SecondaryPickupAddress",
 		"DeliveryAddress",
 		"PartialSITDeliveryAddress",
-		"ShipmentOffers.TransportationServiceProviderPerformance").
+		"ShipmentOffers.TransportationServiceProviderPerformance",
+		"ShipmentOffers.TransportationServiceProviderPerformance.TransportationServiceProvider").
 		Where("shipment_offers.transportation_service_provider_id = $1 and shipments.id = $2", tspID, shipmentID).
 		LeftJoin("shipment_offers", "shipments.id=shipment_offers.shipment_id").
 		All(&shipments)
@@ -540,6 +544,16 @@ func FetchShipmentForVerifiedTSPUser(db *pop.Connection, tspUserID uuid.UUID, sh
 	}
 	return tspUser, shipment, nil
 
+}
+
+// SaveShipment validates and saves the Shipment
+func SaveShipment(db *pop.Connection, shipment *Shipment) (*validate.Errors, error) {
+	verrs, err := db.ValidateAndSave(shipment)
+	if verrs.HasAny() || err != nil {
+		saveError := errors.Wrap(err, "Error saving shipment")
+		return verrs, saveError
+	}
+	return verrs, nil
 }
 
 // saveShipmentAndOffer Validates and updates the Shipment and Shipment Offer
@@ -703,7 +717,7 @@ func SaveShipmentAndAddresses(db *pop.Connection, shipment *Shipment) (*validate
 }
 
 // SaveShipmentAndLineItems saves a shipment and a slice of line items in a single transaction.
-func (s *Shipment) SaveShipmentAndLineItems(db *pop.Connection, lineItems []ShipmentLineItem) (*validate.Errors, error) {
+func (s *Shipment) SaveShipmentAndLineItems(db *pop.Connection, baselineLineItems []ShipmentLineItem, generalLineItems []ShipmentLineItem) (*validate.Errors, error) {
 	responseVErrors := validate.NewErrors()
 	var responseError error
 
@@ -716,9 +730,17 @@ func (s *Shipment) SaveShipmentAndLineItems(db *pop.Connection, lineItems []Ship
 			responseError = errors.Wrap(err, "Error saving shipment")
 			return transactionError
 		}
-
-		for _, lineItem := range lineItems {
+		for _, lineItem := range baselineLineItems {
 			verrs, err = s.createUniqueShipmentLineItem(tx, lineItem)
+			if err != nil || verrs.HasAny() {
+				responseVErrors.Append(verrs)
+				responseError = errors.Wrapf(err, "Error saving shipment line item for shipment %s and item %s",
+					lineItem.ShipmentID, lineItem.Tariff400ngItemID)
+				return transactionError
+			}
+		}
+		for _, lineItem := range generalLineItems {
+			verrs, err = tx.ValidateAndSave(&lineItem)
 			if err != nil || verrs.HasAny() {
 				responseVErrors.Append(verrs)
 				responseError = errors.Wrapf(err, "Error saving shipment line item for shipment %s and item %s",
@@ -739,7 +761,6 @@ func (s *Shipment) createUniqueShipmentLineItem(tx *pop.Connection, lineItem Shi
 	if err != nil {
 		return validate.NewErrors(), err
 	}
-
 	if len(existingLineItems) > 0 {
 		var whichCode string
 		if len(lineItem.Tariff400ngItem.Code) > 0 {
@@ -749,7 +770,6 @@ func (s *Shipment) createUniqueShipmentLineItem(tx *pop.Connection, lineItem Shi
 		}
 		return validate.NewErrors(), errors.New("Line item already exists for item " + whichCode)
 	}
-
 	return tx.ValidateAndCreate(&lineItem)
 }
 
@@ -757,11 +777,56 @@ func (s *Shipment) createUniqueShipmentLineItem(tx *pop.Connection, lineItem Shi
 // If no line items for this code exist yet, return an empty slice.
 func (s *Shipment) FetchShipmentLineItemsByItemID(db *pop.Connection, tariff400ngItemID uuid.UUID) ([]ShipmentLineItem, error) {
 	var lineItems []ShipmentLineItem
-
 	err := db.Q().
 		Where("shipment_id = ?", s.ID).
 		Where("tariff400ng_item_id = ?", tariff400ngItemID).
 		All(&lineItems)
-
 	return lineItems, err
+}
+
+// requireAnAcceptedTSP returns true if a shipment requires that there should be an accepted TSP assigned
+// to the shipment
+func (s *Shipment) requireAnAcceptedTSP() bool {
+	if s.Status == ShipmentStatusACCEPTED ||
+		s.Status == ShipmentStatusAPPROVED ||
+		s.Status == ShipmentStatusINTRANSIT ||
+		s.Status == ShipmentStatusDELIVERED ||
+		s.Status == ShipmentStatusCOMPLETED {
+		return true
+	}
+	return false
+}
+
+// AcceptedShipmentOffer returns the ShipmentOffer for an Accepted TSP for a Shipment
+func (s *Shipment) AcceptedShipmentOffer() (*ShipmentOffer, error) {
+
+	acceptedOffers, err := s.ShipmentOffers.Accepted()
+	if err != nil {
+		return nil, err
+	}
+
+	numAcceptedOffers := len(acceptedOffers)
+
+	// Should never have more than 1 accepted offer for a shipment
+	if numAcceptedOffers > 1 {
+		return nil, errors.Errorf("Found %d accepted shipment offers", numAcceptedOffers)
+	}
+
+	// If the Shipment is in a state that requires a TSP then check for the Accepted TSP
+	if s.requireAnAcceptedTSP() == true {
+		if numAcceptedOffers == 0 || acceptedOffers == nil {
+			return nil, errors.New("No accepted shipment offer found")
+		}
+	} else if numAcceptedOffers == 0 {
+		// If the Shipment does not require that it has a TSP then return nil
+		// -- The Shipment is currently in a state that doesn't require a TSP to be associated to it
+		return nil, nil
+	}
+
+	// Double-check for nil before accessing the variable
+	if acceptedOffers == nil {
+		return nil, nil
+	}
+
+	return &acceptedOffers[0], nil
 }

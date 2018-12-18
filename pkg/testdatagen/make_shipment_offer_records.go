@@ -2,7 +2,6 @@ package testdatagen
 
 import (
 	"fmt"
-	"github.com/transcom/mymove/pkg/unit"
 	"math/rand"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 
 	"github.com/transcom/mymove/pkg/gen/internalmessages"
 	"github.com/transcom/mymove/pkg/models"
+	"github.com/transcom/mymove/pkg/unit"
 )
 
 // MakeShipmentOffer creates a single shipment offer record
@@ -18,13 +18,16 @@ func MakeShipmentOffer(db *pop.Connection, assertions Assertions) models.Shipmen
 
 	// Test for Shipment first before creating a new Shipment
 	shipment := assertions.ShipmentOffer.Shipment
-	if isZeroUUID(assertions.ShipmentOffer.ShipmentID) {
+	if isZeroUUID(shipment.ID) {
 		shipment = MakeShipment(db, assertions)
 	}
 
 	// Test for TSP ID first before creating a new TSP
 	tsp := assertions.ShipmentOffer.TransportationServiceProvider
 	if isZeroUUID(tsp.ID) || isZeroUUID(assertions.ShipmentOffer.TransportationServiceProviderID) {
+		if !isZeroUUID(assertions.ShipmentOffer.TransportationServiceProviderID) {
+			assertions.TransportationServiceProvider.ID = assertions.ShipmentOffer.TransportationServiceProviderID
+		}
 		tsp = MakeTSP(db, assertions)
 	}
 
@@ -120,8 +123,8 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 	}
 
 	// Make the required Tariff 400 NG Zip3
-	MakeDefaultTariff400ngZip3(db)
-	MakeTariff400ngZip3(db, Assertions{
+	FetchOrMakeDefaultTariff400ngZip3(db)
+	FetchOrMakeTariff400ngZip3(db, Assertions{
 		Tariff400ngZip3: models.Tariff400ngZip3{
 			Zip3:          "800",
 			BasepointCity: "Denver",
@@ -132,7 +135,7 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 		},
 	})
 
-	shouldCreateTariffData := false
+	var tariffDataShipment *models.Shipment
 	for i := 1; i <= numShipments; i++ {
 		// Service Member Details
 		smEmail := fmt.Sprintf("leo_spaceman_sm_%d@example.com", i)
@@ -194,27 +197,32 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 		}
 		shipment := MakeShipment(db, shipmentAssertions)
 
+		// Makes zip3 and service area models for origin and destination addresses
+		MakeTariff400ngGeoModelsForShipment(db, shipment)
+
 		durIndex := time.Duration(i + 1)
 
 		// Set dates based on status
 		if shipmentStatus == models.ShipmentStatusINTRANSIT || shipmentStatus == models.ShipmentStatusDELIVERED {
-			shipment.PmSurveyConductedDate = &Now
-			shipment.PmSurveyPlannedPackDate = &NowPlusOneWeek
-			shipment.PmSurveyPlannedPickupDate = &NowPlusOneWeek
-			shipment.PmSurveyPlannedDeliveryDate = &NowPlusTwoWeeks
-			shipment.ActualPackDate = &Now
+			plusOneWeek := shipment.BookDate.Add(OneWeek)
+			plusTwoWeeks := shipment.BookDate.Add(OneWeek * 2)
+			shipment.PmSurveyConductedDate = shipment.BookDate
+			shipment.PmSurveyPlannedPackDate = &plusOneWeek
+			shipment.PmSurveyPlannedPickupDate = &plusOneWeek
+			shipment.PmSurveyPlannedDeliveryDate = &plusTwoWeeks
+			shipment.ActualPackDate = shipment.BookDate
 			// For sortability, we need varying pickup dates
-			pickupDate := Now.Add(OneDay * durIndex)
+			pickupDate := shipment.BookDate.Add(OneDay * durIndex)
 			shipment.ActualPickupDate = &pickupDate
 
 			shipment.NetWeight = shipment.WeightEstimate
 
-			shouldCreateTariffData = true
+			tariffDataShipment = &shipment
 		}
 
 		if shipmentStatus == models.ShipmentStatusDELIVERED {
 			// For sortability, we need varying delivery dates
-			deliveryDate := Now.Add(OneWeek * durIndex)
+			deliveryDate := shipment.BookDate.Add(OneWeek * durIndex)
 			shipment.ActualDeliveryDate = &deliveryDate
 		}
 
@@ -272,12 +280,14 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 		count += split
 		for _, shipment := range subShipmentList {
 			var offerState *bool
-			if shipment.Status == models.ShipmentStatusACCEPTED || shipment.Status == models.ShipmentStatusAPPROVED {
+			if shipment.Status != models.ShipmentStatusAWARDED {
 				offerState = models.BoolPointer(true)
 			}
+			// TODO: How to resolve not using TransportationServiceProviderID at this point
 			shipmentOfferAssertions := Assertions{
 				ShipmentOffer: models.ShipmentOffer{
 					ShipmentID:                      shipment.ID,
+					Shipment:                        shipment,
 					TransportationServiceProviderID: tspUser.TransportationServiceProviderID,
 					Accepted:                        offerState,
 				},
@@ -287,17 +297,14 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 		}
 	}
 
-	if shouldCreateTariffData {
-		createTariffDataForRateEngine(db, shipmentList[0])
+	if tariffDataShipment != nil {
+		createTariffDataForRateEngine(db, *tariffDataShipment)
 	}
 
 	return tspUserList, shipmentList, shipmentOfferList, nil
 }
 
 func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment) {
-	beforePickupDate := shipment.ActualPickupDate.AddDate(0, -6, 0)
-	afterPickupDate := shipment.ActualPickupDate.AddDate(0, 6, 0)
-
 	// $4861 is the cost for a 2000 pound move traveling 1044 miles (90210 to 80011).
 	baseLinehaul := models.Tariff400ngLinehaulRate{
 		DistanceMilesLower: 1001,
@@ -306,8 +313,8 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 		WeightLbsUpper:     2100,
 		RateCents:          386400,
 		Type:               "ConusLinehaul",
-		EffectiveDateLower: beforePickupDate,
-		EffectiveDateUpper: afterPickupDate,
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
 	}
 	mustSave(db, &baseLinehaul)
 
@@ -320,8 +327,8 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 		ServicesSchedule:   3,
 		LinehaulFactor:     unit.Cents(268),
 		ServiceChargeCents: unit.Cents(775),
-		EffectiveDateLower: beforePickupDate,
-		EffectiveDateUpper: afterPickupDate,
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
 		SIT185ARateCents:   unit.Cents(1626),
 		SIT185BRateCents:   unit.Cents(60),
 		SITPDSchedule:      3,
@@ -333,8 +340,8 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 		ServicesSchedule:   3,
 		LinehaulFactor:     unit.Cents(174),
 		ServiceChargeCents: unit.Cents(873),
-		EffectiveDateLower: beforePickupDate,
-		EffectiveDateUpper: afterPickupDate,
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
 		SIT185ARateCents:   unit.Cents(1532),
 		SIT185BRateCents:   unit.Cents(60),
 		SITPDSchedule:      3,
@@ -346,16 +353,16 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 		WeightLbsLower:     0,
 		WeightLbsUpper:     16001,
 		RateCents:          6714,
-		EffectiveDateLower: beforePickupDate,
-		EffectiveDateUpper: afterPickupDate,
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
 	}
 	mustSave(db, &fullPackRate)
 
 	fullUnpackRate := models.Tariff400ngFullUnpackRate{
 		Schedule:           sa2.ServicesSchedule,
 		RateMillicents:     704970,
-		EffectiveDateLower: beforePickupDate,
-		EffectiveDateUpper: afterPickupDate,
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
 	}
 	mustSave(db, &fullUnpackRate)
 
@@ -407,4 +414,16 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 		RequiresPreApproval: false,
 	}
 	mustSave(db, &code105A)
+
+	code105C := models.Tariff400ngItem{
+		Code:                "105C",
+		Item:                "Full Unpack",
+		DiscountType:        models.Tariff400ngItemDiscountTypeHHG,
+		AllowedLocation:     models.Tariff400ngItemAllowedLocationDESTINATION,
+		MeasurementUnit1:    models.Tariff400ngItemMeasurementUnitWEIGHT,
+		MeasurementUnit2:    models.Tariff400ngItemMeasurementUnitNONE,
+		RateRefCode:         models.Tariff400ngItemRateRefCodeNONE,
+		RequiresPreApproval: false,
+	}
+	mustSave(db, &code105C)
 }

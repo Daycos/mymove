@@ -36,7 +36,7 @@ func (suite *HandlerSuite) TestCreatePPMHandler() {
 	}
 
 	newPPMParams := ppmop.CreatePersonallyProcuredMoveParams{
-		MoveID: strfmt.UUID(move.ID.String()),
+		MoveID:                              strfmt.UUID(move.ID.String()),
 		CreatePersonallyProcuredMovePayload: &newPPMPayload,
 		HTTPRequest:                         request,
 	}
@@ -60,6 +60,40 @@ func (suite *HandlerSuite) TestCreatePPMHandler() {
 	badMoveResponse := handler.Handle(newPPMParams)
 	suite.CheckResponseNotFound(badMoveResponse)
 
+}
+
+func (suite *HandlerSuite) TestSubmitPPMHandler() {
+	t := suite.T()
+
+	// create a ppm
+	move1 := testdatagen.MakeDefaultMove(suite.TestDB())
+	ppm := models.PersonallyProcuredMove{
+		MoveID:         move1.ID,
+		Move:           move1,
+		WeightEstimate: swag.Int64(1),
+		Status:         models.PPMStatusDRAFT,
+	}
+
+	verrs, err := suite.TestDB().ValidateAndCreate(&ppm)
+	if verrs.HasAny() || err != nil {
+		t.Error(verrs, err)
+	}
+
+	req := httptest.NewRequest("POST", "/fake/path", nil)
+	req = suite.AuthenticateRequest(req, move1.Orders.ServiceMember)
+
+	submitPPMParams := ppmop.SubmitPersonallyProcuredMoveParams{
+		PersonallyProcuredMoveID: strfmt.UUID(ppm.ID.String()),
+		HTTPRequest:              req,
+	}
+
+	// submit the PPM
+	handler := SubmitPersonallyProcuredMoveHandler{handlers.NewHandlerContext(suite.TestDB(), suite.TestLogger())}
+	response := handler.Handle(submitPPMParams)
+	okResponse := response.(*ppmop.SubmitPersonallyProcuredMoveOK)
+	submitPPMPayload := okResponse.Payload
+
+	suite.Require().Equal(submitPPMPayload.Status, internalmessages.PPMStatusSUBMITTED, "PPM should have been submitted")
 }
 
 func (suite *HandlerSuite) TestIndexPPMHandler() {
@@ -132,7 +166,6 @@ func (suite *HandlerSuite) TestIndexPPMHandler() {
 
 func (suite *HandlerSuite) TestPatchPPMHandler() {
 	scenario.RunRateEngineScenario1(suite.TestDB())
-
 	initialSize := internalmessages.TShirtSize("S")
 	newSize := internalmessages.TShirtSize("L")
 
@@ -168,10 +201,11 @@ func (suite *HandlerSuite) TestPatchPPMHandler() {
 		PlannedMoveDate:            &initialMoveDate,
 		HasAdditionalPostalCode:    hasAdditionalPostalCode,
 		AdditionalPickupPostalCode: additionalPickupPostalCode,
-		HasSit:           hasSit,
-		DaysInStorage:    daysInStorage,
-		Status:           models.PPMStatusDRAFT,
-		AdvanceWorksheet: newAdvanceWorksheet,
+		HasSit:                     hasSit,
+		DaysInStorage:              daysInStorage,
+		Status:                     models.PPMStatusDRAFT,
+		AdvanceWorksheet:           newAdvanceWorksheet,
+		AdvanceWorksheetID:         &newAdvanceWorksheet.ID,
 	}
 	suite.MustSave(&ppm1)
 
@@ -189,8 +223,8 @@ func (suite *HandlerSuite) TestPatchPPMHandler() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -245,8 +279,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerSetWeightLater() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: payload,
 	}
@@ -318,8 +352,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerWrongUser() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -370,8 +404,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerWrongMoveID() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -412,8 +446,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerNoMove() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(badMoveID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(badMoveID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -464,8 +498,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerAdvance() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -528,8 +562,8 @@ func (suite *HandlerSuite) TestPatchPPMHandlerEdgeCases() {
 	}
 
 	patchPPMParams := ppmop.PatchPersonallyProcuredMoveParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:                        req,
+		MoveID:                             strfmt.UUID(move.ID.String()),
 		PersonallyProcuredMoveID:           strfmt.UUID(ppm1.ID.String()),
 		PatchPersonallyProcuredMovePayload: &payload,
 	}
@@ -631,11 +665,11 @@ func (suite *HandlerSuite) TestRequestPPMExpenseSummaryHandler() {
 
 	assertions := testdatagen.Assertions{
 		MoveDocument: models.MoveDocument{
-			MoveID: ppm.Move.ID,
-			Move:   ppm.Move,
+			MoveID:                   ppm.Move.ID,
+			Move:                     ppm.Move,
 			PersonallyProcuredMoveID: &ppm.ID,
-			Status:           "OK",
-			MoveDocumentType: "EXPENSE",
+			Status:                   "OK",
+			MoveDocumentType:         "EXPENSE",
 		},
 		Document: models.Document{
 			ServiceMemberID: sm.ID,

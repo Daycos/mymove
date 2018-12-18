@@ -1,10 +1,11 @@
 package rateengine
 
 import (
+	"time"
+
 	"github.com/gobuffalo/pop"
 	"github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/unit"
-	"time"
 )
 
 // CreateBaseShipmentLineItems will create and return the models for the base shipment line items that every
@@ -23,6 +24,8 @@ func CreateBaseShipmentLineItems(db *pop.Connection, costByShipment CostByShipme
 	if err != nil {
 		return nil, err
 	}
+
+	lhAppliedRate := unit.Millicents(0) // total linehaul does not have a rate, and value should be 0
 	linehaul := models.ShipmentLineItem{
 		ShipmentID:        shipment.ID,
 		Tariff400ngItemID: linehaulItem.ID,
@@ -32,6 +35,7 @@ func CreateBaseShipmentLineItems(db *pop.Connection, costByShipment CostByShipme
 		Quantity2:         unit.BaseQuantityFromInt(cost.LinehaulCostComputation.Mileage),
 		Status:            models.ShipmentLineItemStatusSUBMITTED,
 		AmountCents:       &cost.LinehaulCostComputation.LinehaulChargeTotal,
+		AppliedRate:       &lhAppliedRate,
 		SubmittedDate:     now,
 	}
 	lineItems = append(lineItems, linehaul)
@@ -41,47 +45,44 @@ func CreateBaseShipmentLineItems(db *pop.Connection, costByShipment CostByShipme
 	if err != nil {
 		return nil, err
 	}
-	originServiceFee := models.ShipmentLineItem{
+	originService := models.ShipmentLineItem{
 		ShipmentID:        shipment.ID,
 		Tariff400ngItemID: originServiceFeeItem.ID,
 		Tariff400ngItem:   originServiceFeeItem,
 		Location:          models.ShipmentLineItemLocationORIGIN,
 		Quantity1:         bqNetWeight,
 		Status:            models.ShipmentLineItemStatusSUBMITTED,
-		AmountCents:       &cost.NonLinehaulCostComputation.OriginServiceFee,
+		AmountCents:       &cost.NonLinehaulCostComputation.OriginService.Fee,
+		AppliedRate:       &cost.NonLinehaulCostComputation.OriginService.Rate,
 		SubmittedDate:     now,
 	}
-	lineItems = append(lineItems, originServiceFee)
+	lineItems = append(lineItems, originService)
 
 	// Destination service fee ("135B")
 	destinationServiceFeeItem, err := models.FetchTariff400ngItemByCode(db, "135B")
 	if err != nil {
 		return nil, err
 	}
-	destinationServiceFee := models.ShipmentLineItem{
+	destinationService := models.ShipmentLineItem{
 		ShipmentID:        shipment.ID,
 		Tariff400ngItemID: destinationServiceFeeItem.ID,
 		Tariff400ngItem:   destinationServiceFeeItem,
 		Location:          models.ShipmentLineItemLocationDESTINATION,
 		Quantity1:         bqNetWeight,
 		Status:            models.ShipmentLineItemStatusSUBMITTED,
-		AmountCents:       &cost.NonLinehaulCostComputation.DestinationServiceFee,
+		AmountCents:       &cost.NonLinehaulCostComputation.DestinationService.Fee,
+		AppliedRate:       &cost.NonLinehaulCostComputation.DestinationService.Rate,
 		SubmittedDate:     now,
 	}
-	lineItems = append(lineItems, destinationServiceFee)
+	lineItems = append(lineItems, destinationService)
 
-	// TODO: Determine if we have a separate unpack fee as well.  See notes below.
-	//
 	// Pack fee ("105A")
-	//
-	// Note: For now, I'm adding pack and unpack fees together here and put under 105A.  We don't currently
-	// have a 105C (for unpack) in our tariff400ng_items table.  See this Pivotal for more details:
-	// https://www.pivotaltracker.com/story/show/161564001
 	fullPackItem, err := models.FetchTariff400ngItemByCode(db, "105A")
 	if err != nil {
 		return nil, err
 	}
-	packAndUnpackFee := cost.NonLinehaulCostComputation.PackFee + cost.NonLinehaulCostComputation.UnpackFee
+	packFee := cost.NonLinehaulCostComputation.Pack.Fee
+	packRate := cost.NonLinehaulCostComputation.Pack.Rate
 	fullPack := models.ShipmentLineItem{
 		ShipmentID:        shipment.ID,
 		Tariff400ngItemID: fullPackItem.ID,
@@ -89,10 +90,31 @@ func CreateBaseShipmentLineItems(db *pop.Connection, costByShipment CostByShipme
 		Location:          models.ShipmentLineItemLocationORIGIN,
 		Quantity1:         bqNetWeight,
 		Status:            models.ShipmentLineItemStatusSUBMITTED,
-		AmountCents:       &packAndUnpackFee,
-		SubmittedDate:     time.Now(),
+		AmountCents:       &packFee,
+		AppliedRate:       &packRate,
+		SubmittedDate:     now,
 	}
 	lineItems = append(lineItems, fullPack)
+
+	// Unpack fee ("105C")
+	fullUnpackItem, err := models.FetchTariff400ngItemByCode(db, "105C")
+	if err != nil {
+		return nil, err
+	}
+	unpackFee := cost.NonLinehaulCostComputation.Unpack.Fee
+	unpackRate := cost.NonLinehaulCostComputation.Unpack.Rate
+	fullUnpack := models.ShipmentLineItem{
+		ShipmentID:        shipment.ID,
+		Tariff400ngItemID: fullUnpackItem.ID,
+		Tariff400ngItem:   fullUnpackItem,
+		Location:          models.ShipmentLineItemLocationDESTINATION,
+		Quantity1:         bqNetWeight,
+		Status:            models.ShipmentLineItemStatusSUBMITTED,
+		AmountCents:       &unpackFee,
+		AppliedRate:       &unpackRate,
+		SubmittedDate:     now,
+	}
+	lineItems = append(lineItems, fullUnpack)
 
 	return lineItems, nil
 }

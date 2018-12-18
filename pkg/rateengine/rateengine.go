@@ -52,10 +52,10 @@ func (c CostComputation) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	encoder.AddInt("ShorthaulCharge", c.ShorthaulCharge.Int())
 	encoder.AddInt("LinehaulChargeTotal", c.LinehaulChargeTotal.Int())
 
-	encoder.AddInt("OriginServiceFee", c.OriginServiceFee.Int())
-	encoder.AddInt("DestinationServiceFee", c.DestinationServiceFee.Int())
-	encoder.AddInt("PackFee", c.PackFee.Int())
-	encoder.AddInt("UnpackFee", c.UnpackFee.Int())
+	encoder.AddInt("OriginServiceFee", c.OriginService.Fee.Int())
+	encoder.AddInt("DestinationServiceFee", c.DestinationService.Fee.Int())
+	encoder.AddInt("PackFee", c.Pack.Fee.Int())
+	encoder.AddInt("UnpackFee", c.Unpack.Fee.Int())
 	encoder.AddInt("SITMax", c.SITMax.Int())
 	encoder.AddInt("SITFee", c.SITFee.Int())
 
@@ -102,10 +102,10 @@ func (re *RateEngine) ComputePPM(
 
 	// Apply linehaul discounts
 	linehaulCostComputation.LinehaulChargeTotal = lhDiscount.Apply(linehaulCostComputation.LinehaulChargeTotal)
-	nonLinehaulCostComputation.OriginServiceFee = lhDiscount.Apply(nonLinehaulCostComputation.OriginServiceFee)
-	nonLinehaulCostComputation.DestinationServiceFee = lhDiscount.Apply(nonLinehaulCostComputation.DestinationServiceFee)
-	nonLinehaulCostComputation.PackFee = lhDiscount.Apply(nonLinehaulCostComputation.PackFee)
-	nonLinehaulCostComputation.UnpackFee = lhDiscount.Apply(nonLinehaulCostComputation.UnpackFee)
+	nonLinehaulCostComputation.OriginService.Fee = lhDiscount.Apply(nonLinehaulCostComputation.OriginService.Fee)
+	nonLinehaulCostComputation.DestinationService.Fee = lhDiscount.Apply(nonLinehaulCostComputation.DestinationService.Fee)
+	nonLinehaulCostComputation.Pack.Fee = lhDiscount.Apply(nonLinehaulCostComputation.Pack.Fee)
+	nonLinehaulCostComputation.Unpack.Fee = lhDiscount.Apply(nonLinehaulCostComputation.Unpack.Fee)
 
 	// SIT
 	// Note that SIT has a different discount rate than [non]linehaul charges
@@ -128,17 +128,17 @@ func (re *RateEngine) ComputePPM(
 
 	// Totals
 	gcc := linehaulCostComputation.LinehaulChargeTotal +
-		nonLinehaulCostComputation.OriginServiceFee +
-		nonLinehaulCostComputation.DestinationServiceFee +
-		nonLinehaulCostComputation.PackFee +
-		nonLinehaulCostComputation.UnpackFee
+		nonLinehaulCostComputation.OriginService.Fee +
+		nonLinehaulCostComputation.DestinationService.Fee +
+		nonLinehaulCostComputation.Pack.Fee +
+		nonLinehaulCostComputation.Unpack.Fee
 
 	cost = CostComputation{
 		LinehaulCostComputation:    linehaulCostComputation,
 		NonLinehaulCostComputation: nonLinehaulCostComputation,
-		SITFee: sitFee,
-		SITMax: maxSITFee,
-		GCC:    gcc,
+		SITFee:                     sitFee,
+		SITMax:                     maxSITFee,
+		GCC:                        gcc,
 	}
 
 	// Finally, scale by prorate factor
@@ -180,12 +180,19 @@ func (re *RateEngine) ComputeShipment(
 		return
 	}
 
-	// Apply linehaul discounts
+	// Apply linehaul discounts to fee
 	linehaulCostComputation.LinehaulChargeTotal = lhDiscount.Apply(linehaulCostComputation.LinehaulChargeTotal)
-	nonLinehaulCostComputation.OriginServiceFee = lhDiscount.Apply(nonLinehaulCostComputation.OriginServiceFee)
-	nonLinehaulCostComputation.DestinationServiceFee = lhDiscount.Apply(nonLinehaulCostComputation.DestinationServiceFee)
-	nonLinehaulCostComputation.PackFee = lhDiscount.Apply(nonLinehaulCostComputation.PackFee)
-	nonLinehaulCostComputation.UnpackFee = lhDiscount.Apply(nonLinehaulCostComputation.UnpackFee)
+	nonLinehaulCostComputation.OriginService.Fee = lhDiscount.Apply(nonLinehaulCostComputation.OriginService.Fee)
+	nonLinehaulCostComputation.DestinationService.Fee = lhDiscount.Apply(nonLinehaulCostComputation.DestinationService.Fee)
+	nonLinehaulCostComputation.Pack.Fee = lhDiscount.Apply(nonLinehaulCostComputation.Pack.Fee)
+	nonLinehaulCostComputation.Unpack.Fee = lhDiscount.Apply(nonLinehaulCostComputation.Unpack.Fee)
+
+	// Apply linehaul discount to rate
+	// For rates with retrieved tariff rates in cents, must use ApplyToMillicents by dividing by 1000 to maintain cent level accuracy (and avoid millicent accuracy)
+	nonLinehaulCostComputation.OriginService.Rate = lhDiscount.ApplyToMillicents(nonLinehaulCostComputation.OriginService.Rate/1000) * 1000
+	nonLinehaulCostComputation.DestinationService.Rate = lhDiscount.ApplyToMillicents(nonLinehaulCostComputation.DestinationService.Rate/1000) * 1000
+	nonLinehaulCostComputation.Pack.Rate = lhDiscount.ApplyToMillicents(nonLinehaulCostComputation.Pack.Rate/1000) * 1000
+	nonLinehaulCostComputation.Unpack.Rate = lhDiscount.ApplyToMillicents(nonLinehaulCostComputation.Unpack.Rate)
 
 	// SIT
 	// Note that SIT has a different discount rate than [non]linehaul charges
@@ -208,17 +215,17 @@ func (re *RateEngine) ComputeShipment(
 
 	// Totals
 	gcc := linehaulCostComputation.LinehaulChargeTotal +
-		nonLinehaulCostComputation.OriginServiceFee +
-		nonLinehaulCostComputation.DestinationServiceFee +
-		nonLinehaulCostComputation.PackFee +
-		nonLinehaulCostComputation.UnpackFee
+		nonLinehaulCostComputation.OriginService.Fee +
+		nonLinehaulCostComputation.DestinationService.Fee +
+		nonLinehaulCostComputation.Pack.Fee +
+		nonLinehaulCostComputation.Unpack.Fee
 
 	cost = CostComputation{
 		LinehaulCostComputation:    linehaulCostComputation,
 		NonLinehaulCostComputation: nonLinehaulCostComputation,
-		SITFee: sitFee,
-		SITMax: maxSITFee,
-		GCC:    gcc,
+		SITFee:                     sitFee,
+		SITMax:                     maxSITFee,
+		GCC:                        gcc,
 	}
 
 	// Finally, scale by prorate factor
@@ -248,11 +255,14 @@ func (re *RateEngine) HandleRunOnShipment(shipment models.Shipment) (CostByShipm
 
 	if shipment.ShipmentOffers == nil {
 		return CostByShipment{}, errors.New("ShipmentOffers is nil")
-	} else if len(shipment.ShipmentOffers) == 0 {
-		return CostByShipment{}, errors.New("ShipmentOffers fetched, but none found")
 	}
 
-	if shipment.ShipmentOffers[0].TransportationServiceProviderPerformance.ID == uuid.Nil {
+	acceptedOffer, err := shipment.AcceptedShipmentOffer()
+	if err != nil || acceptedOffer == nil {
+		return CostByShipment{}, errors.Wrap(err, "Error retrieving ACCEPTED ShipmentOffer in rateengine")
+	}
+
+	if acceptedOffer.TransportationServiceProviderPerformance.ID == uuid.Nil {
 		return CostByShipment{}, errors.New("TransportationServiceProviderPerformance is nil")
 	}
 
@@ -273,8 +283,7 @@ func (re *RateEngine) HandleRunOnShipment(shipment models.Shipment) (CostByShipm
 	var sitDiscount unit.DiscountRate
 	sitDiscount = 0.0
 
-	// Assume the most recent matching shipment offer is the right one.
-	lhDiscount := shipment.ShipmentOffers[0].TransportationServiceProviderPerformance.LinehaulRate
+	lhDiscount := acceptedOffer.TransportationServiceProviderPerformance.LinehaulRate
 
 	// Apply rate engine to shipment
 	var shipmentCost CostByShipment

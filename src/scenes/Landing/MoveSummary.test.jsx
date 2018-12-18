@@ -14,6 +14,7 @@ describe('MoveSummary', () => {
   let wrapper, div;
   const editMoveFn = jest.fn();
   const resumeMoveFn = jest.fn();
+  const addPPMShipmentFn = jest.fn();
   const entitlementObj = { sum: '10000' };
   const serviceMember = { current_station: { name: 'Ft Carson' } };
   const ordersObj = {};
@@ -26,6 +27,7 @@ describe('MoveSummary', () => {
     hhgObj,
     editMoveFn,
     resumeMoveFn,
+    addPPMShipmentFn,
   ) => {
     const componentWrapper = shallow(
       <MoveSummary
@@ -37,6 +39,7 @@ describe('MoveSummary', () => {
         shipment={hhgObj}
         editMove={editMoveFn}
         resumeMove={resumeMoveFn}
+        addPPMShipment={addPPMShipmentFn}
       />,
     );
     return shallow(componentWrapper.props().children());
@@ -103,7 +106,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Awaiting approval</div>');
+      ).toEqual('<div class="title">Next Step: Wait for approval</div>');
     });
   });
   describe('when a move is in approved state but ppm is submitted state', () => {
@@ -136,7 +139,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Awaiting approval</div>');
+      ).toEqual('<div class="title">Next Step: Wait for approval</div>');
     });
   });
   describe('when a move and ppm are in approved state', () => {
@@ -254,6 +257,7 @@ describe('MoveSummary', () => {
         editMoveFn,
         resumeMoveFn,
       ).find(SubmittedHhgMoveSummary);
+
       expect(subComponent.find(SubmittedHhgMoveSummary).length).toBe(1);
       expect(
         subComponent
@@ -281,6 +285,7 @@ describe('MoveSummary', () => {
         hhgObj,
         editMoveFn,
         resumeMoveFn,
+        addPPMShipmentFn,
       ).find(SubmittedHhgMoveSummary);
       expect(subComponent.find(SubmittedHhgMoveSummary).length).toBe(1);
       expect(
@@ -421,7 +426,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Complete your customer satisfaction survey</div>');
+      ).toEqual('<div class="title">Next Step: Survey</div>');
     });
   });
   describe('when an hhg is in completed state', () => {
@@ -447,7 +452,7 @@ describe('MoveSummary', () => {
           .find('div.title')
           .first()
           .html(),
-      ).toEqual('<div class="title">Next Step: Complete your customer satisfaction survey</div>');
+      ).toEqual('<div class="title">Next Step: Survey</div>');
     });
   });
 });

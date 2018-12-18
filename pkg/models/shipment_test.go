@@ -3,7 +3,6 @@ package models_test
 import (
 	"time"
 
-	"github.com/gofrs/uuid"
 	. "github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/testdatagen"
 	"github.com/transcom/mymove/pkg/unit"
@@ -168,7 +167,7 @@ func (suite *ModelSuite) TestAcceptShipmentForTSP() {
 	newShipment, newShipmentOffer, _, err := AcceptShipmentForTSP(suite.db, tspUser.TransportationServiceProviderID, shipment.ID)
 	suite.NoError(err)
 
-	suite.Equal(ShipmentStatusACCEPTED, newShipment.Status, "expected Awarded")
+	suite.Equal(ShipmentStatusACCEPTED, newShipment.Status, "expected Accepted")
 	suite.True(*newShipmentOffer.Accepted)
 	suite.Nil(newShipmentOffer.RejectionReason)
 }
@@ -224,7 +223,7 @@ func (suite *ModelSuite) TestSaveShipmentAndLineItems() {
 	shipment := testdatagen.MakeDefaultShipment(suite.db)
 
 	var lineItems []ShipmentLineItem
-	codes := []string{"LHS", "135A", "135B", "105A"}
+	codes := []string{"LHS", "135A", "135B", "105A", "105C"}
 	for _, code := range codes {
 		item := testdatagen.MakeTariff400ngItem(suite.db, testdatagen.Assertions{
 			Tariff400ngItem: Tariff400ngItem{
@@ -239,39 +238,151 @@ func (suite *ModelSuite) TestSaveShipmentAndLineItems() {
 		lineItems = append(lineItems, lineItem)
 	}
 
-	verrs, err := shipment.SaveShipmentAndLineItems(suite.db, lineItems)
+	verrs, err := shipment.SaveShipmentAndLineItems(suite.db, lineItems, []ShipmentLineItem{})
 
 	suite.NoError(err)
 	suite.False(verrs.HasAny())
 }
 
-// TestFetchShipmentLineItemByItemID tests that a shipment line item is fetched correctly by item ID
-func (suite *ModelSuite) TestFetchShipmentLineItemByItemID() {
+// TestSaveShipmentAndLineItemsDisallowDuplicates tests that duplicate baseline charges with the same
+// tariff 400ng codes cannot be saved.
+func (suite *ModelSuite) TestSaveShipmentAndLineItemsDisallowBaselineDuplicates() {
 	shipment := testdatagen.MakeDefaultShipment(suite.db)
-	lineItem := testdatagen.MakeShipmentLineItem(suite.db, testdatagen.Assertions{
+	var lineItems []ShipmentLineItem
+
+	item := testdatagen.MakeTariff400ngItem(suite.db, testdatagen.Assertions{
+		Tariff400ngItem: Tariff400ngItem{
+			Code: "LHS",
+		},
+	})
+	testdatagen.MakeShipmentLineItem(suite.db, testdatagen.Assertions{
 		ShipmentLineItem: ShipmentLineItem{
-			ShipmentID: shipment.ID,
+			Tariff400ngItem:   item,
+			ShipmentID:        shipment.ID,
+			Tariff400ngItemID: item.ID,
+			Shipment:          shipment,
+		},
+	})
+	lineItem := ShipmentLineItem{
+		ShipmentID:        shipment.ID,
+		Tariff400ngItemID: item.ID,
+		Tariff400ngItem:   item,
+	}
+	lineItems = append(lineItems, lineItem)
+	verrs, err := shipment.SaveShipmentAndLineItems(suite.db, lineItems, []ShipmentLineItem{})
+
+	suite.Error(err)
+	suite.False(verrs.HasAny())
+}
+
+// TestSaveShipmentAndLineItemsDisallowDuplicates tests that duplicate baseline charges with the same
+// tariff 400ng codes cannot be saved.
+func (suite *ModelSuite) TestSaveShipmentAndLineItemsAllowOtherDuplicates() {
+	shipment := testdatagen.MakeDefaultShipment(suite.db)
+	var lineItems []ShipmentLineItem
+
+	item := testdatagen.MakeTariff400ngItem(suite.db, testdatagen.Assertions{
+		Tariff400ngItem: Tariff400ngItem{
+			Code: "105B",
+		},
+	})
+	testdatagen.MakeShipmentLineItem(suite.db, testdatagen.Assertions{
+		ShipmentLineItem: ShipmentLineItem{
+			Tariff400ngItem:   item,
+			ShipmentID:        shipment.ID,
+			Tariff400ngItemID: item.ID,
+			Shipment:          shipment,
 		},
 	})
 
-	// Search for good shipment line item.
-	returnedLineItems, err := shipment.FetchShipmentLineItemsByItemID(suite.db, lineItem.Tariff400ngItemID)
+	lineItem := ShipmentLineItem{
+		ShipmentID:        shipment.ID,
+		Tariff400ngItemID: item.ID,
+		Tariff400ngItem:   item,
+	}
+	lineItems = append(lineItems, lineItem)
+	verrs, err := shipment.SaveShipmentAndLineItems(suite.db, []ShipmentLineItem{}, lineItems)
 
 	suite.NoError(err)
-	suite.Len(returnedLineItems, 1)
-	suite.Equal(returnedLineItems[0].ID, lineItem.ID)
-	suite.Equal(returnedLineItems[0].ShipmentID, shipment.ID)
-	suite.Equal(returnedLineItems[0].Tariff400ngItemID, lineItem.Tariff400ngItemID)
+	suite.False(verrs.HasAny())
 }
 
-// TestFetchShipmentLineItemByItemIDNil tests that a shipment line item that's bogus doesn't results in nil.
-func (suite *ModelSuite) TestFetchShipmentLineItemByItemIDNil() {
+// TestSaveShipment tests that a shipment can be saved
+func (suite *ModelSuite) TestSaveShipment() {
 	shipment := testdatagen.MakeDefaultShipment(suite.db)
+	now := time.Now()
+	shipment.PmSurveyCompletedAt = &now
 
-	// Search for bogus line item ID.
-	bogusID := uuid.Must(uuid.NewV4())
-	returnedLineItems, err := shipment.FetchShipmentLineItemsByItemID(suite.db, bogusID)
+	verrs, err := SaveShipment(suite.db, &shipment)
 
 	suite.NoError(err)
-	suite.Len(returnedLineItems, 0)
+	suite.False(verrs.HasAny())
+}
+
+// TestAcceptedShipmentOffer test that we can retrieve a valid accepted shipment offer
+func (suite *ModelSuite) TestAcceptedShipmentOffer() {
+	shipment := testdatagen.MakeDefaultShipment(suite.db)
+	suite.Equal(ShipmentStatusDRAFT, shipment.Status, "expected Draft")
+
+	// Shipment does not have an accepted shipment offer
+	noAcceptedShipmentOffer, err := shipment.AcceptedShipmentOffer()
+	suite.Nil(err) // Shipment.Status does not require an accepted ShipmentOffer
+	suite.Nil(noAcceptedShipmentOffer)
+
+	shipmentOffer := testdatagen.MakeDefaultShipmentOffer(suite.db)
+	shipment.ShipmentOffers = append(shipment.ShipmentOffers, shipmentOffer)
+	suite.Len(shipment.ShipmentOffers, 1)
+
+	// Can submit shipment
+	err = shipment.Submit()
+	suite.Nil(err)
+	suite.Equal(ShipmentStatusSUBMITTED, shipment.Status, "expected Submitted")
+
+	// Can award shipment
+	err = shipment.Award()
+	suite.Nil(err)
+	suite.Equal(ShipmentStatusAWARDED, shipment.Status, "expected Awarded")
+
+	// ShipmentOffer has not been accepted yet
+	// Shipment does not have an accepted shipment offer
+	noAcceptedShipmentOffer, err = shipment.AcceptedShipmentOffer()
+	suite.Nil(err) // Shipment.Status does not require an accepted ShipmentOffer
+	suite.Nil(noAcceptedShipmentOffer)
+
+	// Can accept shipment
+	err = shipment.Accept()
+	suite.Nil(err)
+	suite.Equal(ShipmentStatusACCEPTED, shipment.Status, "expected Accepted")
+
+	// ShipmentOffer has not been accepted yet
+	// Shipment does not have an accepted shipment offer, but Shipment is in the Accepted state
+	noAcceptedShipmentOffer, err = shipment.AcceptedShipmentOffer()
+	suite.NotNil(err) // Shipment.Status requires an accepted ShipmentOffer
+	suite.Nil(noAcceptedShipmentOffer)
+
+	// Accept ShipmentOffer for the TSP
+	err = shipment.ShipmentOffers[0].Accept()
+	suite.Nil(err)
+	suite.True(*shipment.ShipmentOffers[0].Accepted)
+	suite.Nil(shipment.ShipmentOffers[0].RejectionReason)
+
+	// Get accepted shipment offer from shipment
+	acceptedShipmentOffer, err := shipment.AcceptedShipmentOffer()
+	suite.Nil(err)
+	suite.NotNil(acceptedShipmentOffer)
+
+	// Test results of TSP for an accepted shipment offer
+	// accepted shipment offer can't have empty or nil values for certain data
+	scac, err := acceptedShipmentOffer.SCAC()
+	suite.Nil(err)
+	suite.NotEmpty(scac)
+	supplierID, err := acceptedShipmentOffer.SupplierID()
+	suite.Nil(err)
+	suite.NotNil(supplierID)
+	suite.NotEmpty(*supplierID)
+
+	// Do TSPs have the same ID
+	suite.NotEmpty(acceptedShipmentOffer.TransportationServiceProviderPerformance.TransportationServiceProvider.ID.String())
+	suite.Equal(acceptedShipmentOffer.TransportationServiceProviderPerformance.TransportationServiceProvider.ID,
+		shipment.ShipmentOffers[0].TransportationServiceProviderPerformance.TransportationServiceProvider.ID)
 }
