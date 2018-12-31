@@ -10,9 +10,6 @@ var TestYear = 2018
 // DefaultZip3 is the default zip3 for testing
 var DefaultZip3 = "902"
 
-// DefaultZip3 is the default zip3 for testing
-var DefaultZip3 = "902"
-
 // DefaultSrcGBLOC is the default GBLOC for testing.
 var DefaultSrcGBLOC = "KKFA"
 

@@ -14,12 +14,11 @@ import (
 	"github.com/transcom/mymove/pkg/auth"
 	"github.com/transcom/mymove/pkg/edi"
 	"github.com/transcom/mymove/pkg/edi/gex"
-	"github.com/transcom/mymove/pkg/edi/invoice"
+	ediinvoice "github.com/transcom/mymove/pkg/edi/invoice"
 	shipmentop "github.com/transcom/mymove/pkg/gen/internalapi/internaloperations/shipments"
 	"github.com/transcom/mymove/pkg/gen/internalmessages"
 	"github.com/transcom/mymove/pkg/handlers"
 	"github.com/transcom/mymove/pkg/models"
-	"github.com/transcom/mymove/pkg/rateengine"
 )
 
 func payloadForInvoiceModel(a *models.Invoice) *internalmessages.Invoice {
@@ -30,6 +29,7 @@ func payloadForInvoiceModel(a *models.Invoice) *internalmessages.Invoice {
 	return &internalmessages.Invoice{
 		ID:                *handlers.FmtUUID(a.ID),
 		ShipmentID:        *handlers.FmtUUID(a.ShipmentID),
+		InvoiceNumber:     a.InvoiceNumber,
 		ApproverFirstName: a.Approver.FirstName,
 		ApproverLastName:  a.Approver.LastName,
 		Status:            internalmessages.InvoiceStatus(a.Status),
@@ -510,15 +510,8 @@ func (h ShipmentInvoiceHandler) Handle(params shipmentop.CreateAndSendHHGInvoice
 		return handlers.ResponseForVErrors(h.Logger(), verrs, err)
 	}
 
-	engine := rateengine.NewRateEngine(h.DB(), h.Logger(), h.Planner())
-	// Run rate engine on shipment --> returns CostByShipment Struct
-	costByShipment, err := engine.HandleRunOnShipment(shipment)
-	if err != nil {
-		return handlers.ResponseForError(h.Logger(), err)
-	}
-
 	// pass value into generator --> edi string
-	invoice858C, err := ediinvoice.Generate858C(costByShipment.Shipment, h.DB(), h.SendProductionInvoice(), clock.New())
+	invoice858C, err := ediinvoice.Generate858C(shipment, h.DB(), h.SendProductionInvoice(), clock.New())
 	if err != nil {
 		return handlers.ResponseForError(h.Logger(), err)
 	}
