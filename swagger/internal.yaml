@@ -3206,9 +3206,9 @@ paths:
         403:
           description: not authorized to send this invoice
         409:
-          description: the shipment is not in a state to be invoiced
+          description: the shipment cannot be invoiced becuase of a data conflict
           schema:
-            $ref: '#/definitions/Shipment'
+            $ref: '#/definitions/Invoice'
         500:
           description: server error
   /reimbursement/{reimbursementId}/approve:
@@ -3512,6 +3512,36 @@ paths:
           description: List of projected move-related dates
           schema:
             $ref: '#/definitions/MoveDatesSummary'
+        400:
+          description: invalid request
+        401:
+          description: request requires user authentication
+        403:
+          description: user is not authorized
+        500:
+          description: internal server error
+  /moves/{moveId}/shipment_summary_worksheet:
+    get:
+      summary: Returns Shipment Summary Worksheet
+      description: Generates pre-filled PDF using data already collected
+      operationId: showShipmentSummaryWorksheet
+      tags:
+        - moves
+      parameters:
+        - in: path
+          name: moveId
+          type: string
+          format: uuid
+          required: true
+          description: UUID of the move
+      produces:
+        - application/pdf
+      responses:
+        200:
+          description: Pre-filled worksheet PDF
+          schema:
+            format: binary
+            type: file
         400:
           description: invalid request
         401:
