@@ -1,45 +1,30 @@
 package models_test
 
 import (
-	"log"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/gobuffalo/pop"
 	"github.com/gobuffalo/validate"
 	"github.com/stretchr/testify/suite"
 	"github.com/transcom/mymove/pkg/models"
+	"github.com/transcom/mymove/pkg/testingsuite"
 )
 
 type ModelSuite struct {
-	suite.Suite
-	db *pop.Connection
+	testingsuite.PopTestSuite
 }
 
 func (suite *ModelSuite) SetupTest() {
-	suite.db.TruncateAll()
-}
-
-func (suite *ModelSuite) mustSave(model interface{}) {
-	t := suite.T()
-	t.Helper()
-
-	verrs, err := suite.db.ValidateAndSave(model)
-	if err != nil {
-		log.Panic(err)
-	}
-	if verrs.Count() > 0 {
-		t.Fatalf("errors encountered saving %v: %v", model, verrs)
-	}
+	suite.DB().TruncateAll()
 }
 
 func (suite *ModelSuite) verifyValidationErrors(model models.ValidateableModel, exp map[string][]string) {
 	t := suite.T()
 	t.Helper()
 
-	verrs, err := model.Validate(suite.db)
+	verrs, err := model.Validate(suite.DB())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,14 +76,7 @@ func (suite *ModelSuite) FatalNoError(err error, messages ...string) {
 }
 
 func TestModelSuite(t *testing.T) {
-	configLocation := "../../config"
-	pop.AddLookupPaths(configLocation)
-	db, err := pop.Connect("test")
-	if err != nil {
-		log.Panic(err)
-	}
-
-	hs := &ModelSuite{db: db}
+	hs := &ModelSuite{PopTestSuite: testingsuite.NewPopTestSuite()}
 	suite.Run(t, hs)
 }
 
