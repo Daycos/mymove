@@ -11,6 +11,8 @@ export const uploads = new schema.Array(upload);
 // PPMs
 export const personallyProcuredMove = new schema.Entity('personallyProcuredMove');
 export const personallyProcuredMoves = new schema.Array(personallyProcuredMove);
+export const indexPersonallyProcuredMove = personallyProcuredMoves;
+export const reimbursement = new schema.Entity('reimbursements');
 
 // Addresses
 export const address = new schema.Entity('addresses');
@@ -36,16 +38,25 @@ personallyProcuredMove.define({
 });
 
 // Orders
-export const order = new schema.Entity('orders', {
+export const orders = new schema.Entity('orders');
+orders.define({
   moves: moves,
 });
+export const ordersArray = new schema.Array(orders);
 
-export const orders = new schema.Array(order);
+// ServiceMemberBackupContacts
+export const backupContact = new schema.Entity('backupContacts');
+
+export const backupContacts = new schema.Array(backupContact);
+
+export const indexServiceMemberBackupContacts = new schema.Array(backupContact);
+
+export const serviceMemberBackupContact = backupContact;
 
 // Service Member
 export const serviceMember = new schema.Entity('serviceMembers', {
+  backup_contacts: backupContacts,
   user: user,
-  orders: orders,
 });
 
 // Documents
@@ -53,7 +64,7 @@ export const documentModel = new schema.Entity('documents', {
   uploads: uploads,
   service_member: serviceMember,
 });
-order.define({
+orders.define({
   uploaded_orders: documentModel,
 });
 

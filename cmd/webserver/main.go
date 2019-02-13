@@ -39,7 +39,6 @@ import (
 	"github.com/transcom/mymove/pkg/auth/authentication"
 	"github.com/transcom/mymove/pkg/db/sequence"
 	"github.com/transcom/mymove/pkg/dpsauth"
-	"github.com/transcom/mymove/pkg/edi/gex"
 	"github.com/transcom/mymove/pkg/edi/invoice"
 	"github.com/transcom/mymove/pkg/handlers"
 	"github.com/transcom/mymove/pkg/handlers/dpsapi"
@@ -51,6 +50,8 @@ import (
 	"github.com/transcom/mymove/pkg/notifications"
 	"github.com/transcom/mymove/pkg/route"
 	"github.com/transcom/mymove/pkg/server"
+	"github.com/transcom/mymove/pkg/services"
+	"github.com/transcom/mymove/pkg/services/invoice"
 	"github.com/transcom/mymove/pkg/storage"
 )
 
@@ -848,30 +849,30 @@ func main() {
 	logger.Debug("Server DOD Key Pair Loaded")
 	logger.Debug("Trusted Certificate Authorities", zap.Any("subjects", rootCAs.Subjects()))
 
-	// Set the GexSender() and SendToGexHTTP fields
+	// Set the GexSender() and GexSender fields
 	tlsConfig := &tls.Config{Certificates: certificates, RootCAs: rootCAs}
-	var gexRequester gex.SendToGex
+	var gexRequester services.GexSender
 	gexURL := v.GetString("gex-url")
 	if len(gexURL) == 0 {
 		// this spins up a local test server
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
-		gexRequester = gex.SendToGexHTTP{
-			URL:                  server.URL,
-			IsTrueGexURL:         false,
-			TLSConfig:            &tls.Config{},
-			GEXBasicAuthUsername: "",
-			GEXBasicAuthPassword: "",
-		}
+		gexRequester = invoice.NewGexSenderHTTP(
+			server.URL,
+			false,
+			&tls.Config{},
+			"",
+			"",
+		)
 	} else {
-		gexRequester = gex.SendToGexHTTP{
-			URL:                  v.GetString("gex-url"),
-			IsTrueGexURL:         true,
-			TLSConfig:            tlsConfig,
-			GEXBasicAuthUsername: v.GetString("gex-basic-auth-username"),
-			GEXBasicAuthPassword: v.GetString("gex-basic-auth-password"),
-		}
+		gexRequester = invoice.NewGexSenderHTTP(
+			v.GetString("gex-url"),
+			true,
+			tlsConfig,
+			v.GetString("gex-basic-auth-username"),
+			v.GetString("gex-basic-auth-password"),
+		)
 	}
 	handlerContext.SetGexSender(gexRequester)
 
@@ -1082,7 +1083,8 @@ func main() {
 		root.Handle(pat.New("/devlocal-auth/*"), localAuthMux)
 		localAuthMux.Handle(pat.Get("/login"), authentication.NewUserListHandler(authContext, dbConnection))
 		localAuthMux.Handle(pat.Post("/login"), authentication.NewAssignUserHandler(authContext, dbConnection, clientAuthSecretKey, noSessionTimeout))
-		localAuthMux.Handle(pat.Post("/new"), authentication.NewCreateUserHandler(authContext, dbConnection, clientAuthSecretKey, noSessionTimeout))
+		localAuthMux.Handle(pat.Post("/new"), authentication.NewCreateAndLoginUserHandler(authContext, dbConnection, clientAuthSecretKey, noSessionTimeout))
+		localAuthMux.Handle(pat.Post("/create"), authentication.NewCreateUserHandler(authContext, dbConnection, clientAuthSecretKey, noSessionTimeout))
 
 		devlocalCa, err := ioutil.ReadFile(v.GetString("devlocal-ca")) // #nosec
 		if err != nil {
