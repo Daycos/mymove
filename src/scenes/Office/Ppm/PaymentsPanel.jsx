@@ -15,6 +15,7 @@ import { getLastError } from 'shared/Swagger/selectors';
 import { no_op } from 'shared/utils';
 import { formatCents, formatDate } from 'shared/formatters';
 import Alert from 'shared/Alert';
+import ToolTip from 'shared/ToolTip';
 
 import FontAwesomeIcon from '@fortawesome/react-fontawesome';
 import faCheck from '@fortawesome/fontawesome-free-solid/faCheck';
@@ -65,16 +66,16 @@ class PaymentsTable extends Component {
   };
 
   documentUpload = () => {
-    const move = this.props.move;
-    this.props.push(`/moves/${move.id}/documents/new?move_document_type=SHIPMENT_SUMMARY`);
+    const { moveId } = this.props;
+    this.props.push(`/moves/${moveId}/documents/new?move_document_type=SHIPMENT_SUMMARY`);
   };
 
   downloadShipmentSummary = () => {
-    let moveID = get(this.props, 'move.id');
+    const { moveId } = this.props;
     const userDate = getUserDate();
 
     // eslint-disable-next-line
-    window.open(`/internal/moves/${moveID}/shipment_summary_worksheet/?preparationDate=${userDate}`);
+    window.open(`/internal/moves/${moveId}/shipment_summary_worksheet/?preparationDate=${userDate}`);
   };
 
   renderAdvanceAction = () => {
@@ -83,25 +84,27 @@ class PaymentsTable extends Component {
         return <div>{/* Further actions to come*/}</div>;
       } else {
         return (
-          <React.Fragment>
-            <div onClick={this.approveReimbursement}>
+          <div onClick={this.approveReimbursement}>
+            <ToolTip disabled={false} text="Approve" textStyle="tooltiptext-small">
               <FontAwesomeIcon aria-hidden className="icon approval-ready" icon={faCheck} title="Approve" />
-              <span className="tooltiptext">Approve</span>
-            </div>
-          </React.Fragment>
+            </ToolTip>
+          </div>
         );
       }
     } else {
       return (
-        <React.Fragment>
+        <ToolTip
+          disabled={false}
+          text={"Can't approve payment until shipment is approved"}
+          textStyle="tooltiptext-medium"
+        >
           <FontAwesomeIcon
             aria-hidden
             className="icon approval-blocked"
             icon={faCheck}
             title="Can't approve payment until shipment is approved."
           />
-          <span className="tooltiptext">Can't approve payment until shipment is approved.</span>
-        </React.Fragment>
+        </ToolTip>
       );
     }
   };
@@ -156,9 +159,7 @@ class PaymentsTable extends Component {
                       </div>
                     )}
                   </td>
-                  <td className="payment-table-column-content">
-                    <span className="tooltip">{this.renderAdvanceAction()}</span>
-                  </td>
+                  <td className="payment-table-column-content">{this.renderAdvanceAction()}</td>
                 </tr>
               </React.Fragment>
             ) : (
@@ -246,14 +247,14 @@ class PaymentsTable extends Component {
   }
 }
 
-const mapStateToProps = state => {
-  const move = get(state, 'office.officeMove', {});
-  const ppm = selectPPMForMove(state, move.id);
-  const advance = get(ppm, 'advance', {});
+const mapStateToProps = (state, ownProps) => {
+  const { moveId } = ownProps;
+  const ppm = selectPPMForMove(state, moveId);
+  const advance = selectReimbursement(state, ppm.advance);
   return {
     ppm,
-    move,
-    advance: selectReimbursement(state, advance.id) || advance,
+    moveId,
+    advance,
     attachmentsError: getLastError(state, downloadPPMAttachmentsLabel),
   };
 };
