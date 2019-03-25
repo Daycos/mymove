@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gobuffalo/validate"
 	"github.com/gobuffalo/validate/validators"
+	"github.com/rickar/cal"
 
 	"github.com/gobuffalo/pop"
+
 	"github.com/transcom/mymove/pkg/gen/internalmessages"
 	"github.com/transcom/mymove/pkg/unit"
 )
@@ -43,6 +46,21 @@ func (v *StringDoesNotContainSSN) IsValid(errors *validate.Errors) {
 	cleanSSN := ignoredCharactersRegex.ReplaceAllString(v.Field, "")
 	if nineDigitsRegex.MatchString(cleanSSN) {
 		errors.Add(validators.GenerateKey(v.Name), fmt.Sprintf("%s Cannot store a raw SSN in this field.", v.Name))
+	}
+}
+
+// OptionalTimeIsPresent adds an error if the Field is not nil and also not a valid time
+type OptionalTimeIsPresent struct {
+	Name    string
+	Field   *time.Time
+	Message string
+}
+
+// IsValid adds an error if the Field is not nil and also not a valid time
+func (v *OptionalTimeIsPresent) IsValid(errors *validate.Errors) {
+	if v.Field != nil {
+		timeIsPresent := validators.TimeIsPresent{Name: v.Name, Field: *v.Field, Message: v.Message}
+		timeIsPresent.IsValid(errors)
 	}
 }
 
@@ -117,17 +135,32 @@ func (v *DiscountRateIsValid) IsValid(errors *validate.Errors) {
 	}
 }
 
-// AllowedFileType validates that a content-type is contained in our list of accepted types.
-type AllowedFileType struct {
-	validators.StringInclusion
+type container interface {
+	Contains(string) bool
+	Contents() []string
 }
 
-// NewAllowedFileTypeValidator constructs as StringInclusion Validator which checks for allowed file upload types
-func NewAllowedFileTypeValidator(field string, name string) *AllowedFileType {
-	return &AllowedFileType{
-		validators.StringInclusion{Name: name,
-			Field: field,
-			List:  []string{"image/jpeg", "image/png", "application/pdf", "text/plain", "text/plain; charset=utf-8"}}}
+// StringInList is an improved validators.StringInclusion validator with better error messages.
+type StringInList struct {
+	Value     string
+	FieldName string
+	List      container
+}
+
+// NewStringInList returns a new StringInList validator.
+func NewStringInList(value string, fieldName string, list container) *StringInList {
+	return &StringInList{
+		Value:     value,
+		FieldName: fieldName,
+		List:      list,
+	}
+}
+
+// IsValid adds an error if the string value is blank.
+func (v *StringInList) IsValid(errors *validate.Errors) {
+	if !v.List.Contains(v.Value) {
+		errors.Add(validators.GenerateKey(v.FieldName), fmt.Sprintf("'%s' is not in the list [%s].", v.Value, strings.Join(v.List.Contents(), ", ")))
+	}
 }
 
 // AffiliationIsPresent validates that a branch is present
@@ -169,6 +202,38 @@ func (v *CannotBeTrueIfFalse) IsValid(errors *validate.Errors) {
 	if v.Field1 == true && v.Field2 == false {
 		errors.Add(validators.GenerateKey(v.Name1), fmt.Sprintf("%s can not be true if %s is false", v.Name1, v.Name2))
 	}
+}
+
+// DateIsWorkday validates that field is on a workday
+type DateIsWorkday struct {
+	Name     string
+	Field    time.Time
+	Calendar *cal.Calendar
+}
+
+// IsValid adds error if field is not on valid workday
+func (v *DateIsWorkday) IsValid(errors *validate.Errors) {
+	if !v.Calendar.IsWorkday(v.Field) {
+		errors.Add(validators.GenerateKey(v.Name),
+			fmt.Sprintf("cannot be on a weekend or holiday, is %v", v.Field))
+	}
+}
+
+// OptionalDateIsWorkday validates that a field is on a workday if it exists
+type OptionalDateIsWorkday struct {
+	Name     string
+	Field    *time.Time
+	Calendar *cal.Calendar
+}
+
+// IsValid adds error if field is not on valid workday
+// ignores nil field
+func (v *OptionalDateIsWorkday) IsValid(errors *validate.Errors) {
+	if v.Field == nil {
+		return
+	}
+	dateIsWorkday := DateIsWorkday{v.Name, *v.Field, v.Calendar}
+	dateIsWorkday.IsValid(errors)
 }
 
 // ValidateableModel is here simply because `validateable` is private to `pop`

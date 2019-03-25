@@ -8,19 +8,20 @@ import (
 	"github.com/gobuffalo/validate"
 	"go.uber.org/zap"
 
+	"github.com/transcom/mymove/pkg/db/sequence"
 	"github.com/transcom/mymove/pkg/dpsauth"
-	"github.com/transcom/mymove/pkg/edi/gex"
 	"github.com/transcom/mymove/pkg/iws"
 	"github.com/transcom/mymove/pkg/logging/hnyzap"
 	"github.com/transcom/mymove/pkg/notifications"
 	"github.com/transcom/mymove/pkg/route"
+	"github.com/transcom/mymove/pkg/services"
 	"github.com/transcom/mymove/pkg/storage"
 )
 
 // HandlerContext provides access to all the contextual references needed by individual handlers
 type HandlerContext interface {
 	DB() *pop.Connection
-	Logger() *zap.Logger
+	Logger() Logger
 	HoneyZapLogger() *hnyzap.Logger
 	FileStorer() storage.FileStorer
 	SetFileStorer(storer storage.FileStorer)
@@ -32,12 +33,17 @@ type HandlerContext interface {
 	SetCookieSecret(secret string)
 	NoSessionTimeout() bool
 	SetNoSessionTimeout()
-	IWSRealTimeBrokerService() iws.RealTimeBrokerService
-	SetIWSRealTimeBrokerService(rbs iws.RealTimeBrokerService)
+	IWSPersonLookup() iws.PersonLookup
+	SetIWSPersonLookup(rbs iws.PersonLookup)
 	SendProductionInvoice() bool
 	SetSendProductionInvoice(sendProductionInvoice bool)
-	GexSender() gex.SendToGex
-	SetGexSender(gexSender gex.SendToGex)
+	UseSecureCookie() bool
+	SetUseSecureCookie(useSecureCookie bool)
+
+	GexSender() services.GexSender
+	SetGexSender(gexSender services.GexSender)
+	ICNSequencer() sequence.Sequencer
+	SetICNSequencer(sequencer sequence.Sequencer)
 	DPSAuthParams() dpsauth.Params
 	SetDPSAuthParams(params dpsauth.Params)
 	RespondAndTraceError(ctx context.Context, err error, msg string, fields ...zap.Field) middleware.Responder
@@ -46,21 +52,23 @@ type HandlerContext interface {
 
 // A single handlerContext is passed to each handler
 type handlerContext struct {
-	db                       *pop.Connection
-	logger                   *zap.Logger
-	cookieSecret             string
-	noSessionTimeout         bool
-	planner                  route.Planner
-	storage                  storage.FileStorer
-	notificationSender       notifications.NotificationSender
-	iwsRealTimeBrokerService iws.RealTimeBrokerService
-	sendProductionInvoice    bool
-	dpsAuthParams            dpsauth.Params
-	senderToGex              gex.SendToGex
+	db                    *pop.Connection
+	logger                Logger
+	cookieSecret          string
+	noSessionTimeout      bool
+	planner               route.Planner
+	storage               storage.FileStorer
+	notificationSender    notifications.NotificationSender
+	iwsPersonLookup       iws.PersonLookup
+	sendProductionInvoice bool
+	dpsAuthParams         dpsauth.Params
+	senderToGex           services.GexSender
+	icnSequencer          sequence.Sequencer
+	useSecureCookie       bool
 }
 
 // NewHandlerContext returns a new handlerContext with its required private fields set.
-func NewHandlerContext(db *pop.Connection, logger *zap.Logger) HandlerContext {
+func NewHandlerContext(db *pop.Connection, logger Logger) HandlerContext {
 	return &handlerContext{
 		db:     db,
 		logger: logger,
@@ -73,13 +81,16 @@ func (hctx *handlerContext) DB() *pop.Connection {
 }
 
 // Logger returns the logger to use in this context
-func (hctx *handlerContext) Logger() *zap.Logger {
+func (hctx *handlerContext) Logger() Logger {
 	return hctx.logger
 }
 
 // HoneyZapLogger returns the logger capable of writing to Honeycomb to use in this context
 func (hctx *handlerContext) HoneyZapLogger() *hnyzap.Logger {
-	return &hnyzap.Logger{Logger: hctx.logger}
+	if zapLogger, ok := hctx.logger.(*zap.Logger); ok {
+		return &hnyzap.Logger{Logger: zapLogger}
+	}
+	return nil
 }
 
 // RespondAndTraceError uses Honeycomb to trace errors and then passes response to the standard ResponseForError
@@ -144,12 +155,12 @@ func (hctx *handlerContext) SetNoSessionTimeout() {
 	hctx.noSessionTimeout = true
 }
 
-func (hctx *handlerContext) IWSRealTimeBrokerService() iws.RealTimeBrokerService {
-	return hctx.iwsRealTimeBrokerService
+func (hctx *handlerContext) IWSPersonLookup() iws.PersonLookup {
+	return hctx.iwsPersonLookup
 }
 
-func (hctx *handlerContext) SetIWSRealTimeBrokerService(rbs iws.RealTimeBrokerService) {
-	hctx.iwsRealTimeBrokerService = rbs
+func (hctx *handlerContext) SetIWSPersonLookup(rbs iws.PersonLookup) {
+	hctx.iwsPersonLookup = rbs
 }
 
 // SendProductionInvoice is a flag to notify EDI invoice generation whether it should be sent as a test or production transaction
@@ -162,12 +173,20 @@ func (hctx *handlerContext) SetSendProductionInvoice(sendProductionInvoice bool)
 	hctx.sendProductionInvoice = sendProductionInvoice
 }
 
-func (hctx *handlerContext) GexSender() gex.SendToGex {
+func (hctx *handlerContext) GexSender() services.GexSender {
 	return hctx.senderToGex
 }
 
-func (hctx *handlerContext) SetGexSender(sendGexRequest gex.SendToGex) {
+func (hctx *handlerContext) SetGexSender(sendGexRequest services.GexSender) {
 	hctx.senderToGex = sendGexRequest
+}
+
+func (hctx *handlerContext) ICNSequencer() sequence.Sequencer {
+	return hctx.icnSequencer
+}
+
+func (hctx *handlerContext) SetICNSequencer(sequencer sequence.Sequencer) {
+	hctx.icnSequencer = sequencer
 }
 
 func (hctx *handlerContext) DPSAuthParams() dpsauth.Params {
@@ -176,4 +195,14 @@ func (hctx *handlerContext) DPSAuthParams() dpsauth.Params {
 
 func (hctx *handlerContext) SetDPSAuthParams(params dpsauth.Params) {
 	hctx.dpsAuthParams = params
+}
+
+// UseSecureCookie determines if the field "Secure" is set to true or false upon cookie creation
+func (hctx *handlerContext) UseSecureCookie() bool {
+	return hctx.useSecureCookie
+}
+
+// Sets flag for using Secure cookie
+func (hctx *handlerContext) SetUseSecureCookie(useSecureCookie bool) {
+	hctx.useSecureCookie = useSecureCookie
 }

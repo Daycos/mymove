@@ -10,6 +10,7 @@ import { formatDate, formatCents } from 'shared/formatters';
 import { PanelSwaggerField, editablePanelify } from 'shared/EditablePanel';
 import { SwaggerField } from 'shared/JsonSchemaForm/JsonSchemaField';
 import { selectMoveDocument, updateMoveDocument } from 'shared/Entities/modules/moveDocuments';
+import { selectPPMForMove } from 'shared/Entities/modules/ppms';
 import { isMovingExpenseDocument } from 'shared/Entities/modules/movingExpenseDocuments';
 
 import ExpenseDocumentForm from 'scenes/Office/DocumentViewer/ExpenseDocumentForm';
@@ -118,7 +119,7 @@ let DocumentDetailPanel = editablePanelify(DocumentDetailDisplay, DocumentDetail
 DocumentDetailPanel = reduxForm({ form: formName })(DocumentDetailPanel);
 
 function mapStateToProps(state, props) {
-  const moveDocumentId = props.moveDocumentId;
+  const { moveId, moveDocumentId } = props;
   const moveDocument = selectMoveDocument(state, moveDocumentId);
   const isExpenseDocument = isMovingExpenseDocument(moveDocument);
   // Convert cents to collars - make a deep clone copy to not modify moveDocument itself
@@ -137,7 +138,6 @@ function mapStateToProps(state, props) {
     formValues: getFormValues(formName)(state),
     moveDocSchema: get(state, 'swaggerInternal.spec.definitions.MoveDocumentPayload', {}),
     hasError: false,
-    errorMessage: state.office.error,
     isUpdating: false,
     moveDocument,
 
@@ -145,7 +145,7 @@ function mapStateToProps(state, props) {
     getUpdateArgs: function() {
       // Make a copy of values to not modify moveDocument
       let values = JSON.parse(JSON.stringify(getFormValues(formName)(state)));
-      values.moveDocument.personally_procured_move_id = get(state.office, 'officePPMs.0.id');
+      values.moveDocument.personally_procured_move_id = selectPPMForMove(state, props.moveId).id;
       if (
         get(values.moveDocument, 'move_document_type', '') !== 'EXPENSE' &&
         get(values.moveDocument, 'payment_method', false)
@@ -155,7 +155,7 @@ function mapStateToProps(state, props) {
       if (get(values.moveDocument, 'move_document_type', '') === 'EXPENSE') {
         values.moveDocument.requested_amount_cents = convertDollarsToCents(values.moveDocument.requested_amount_cents);
       }
-      return [get(state, 'office.officeMove.id'), get(moveDocument, 'id'), values.moveDocument];
+      return [moveId, moveDocumentId, values.moveDocument];
     },
   };
 }

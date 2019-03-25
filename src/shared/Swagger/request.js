@@ -129,7 +129,6 @@ export function swaggerRequest(getClient, operationPath, params, options = {}) {
           throw new Error(`Could not find a schema for ${schemaKey}`);
         }
         action.entities = normalizePayload(response.body, payloadSchema).entities;
-
         dispatch(action);
         return action;
       })
@@ -155,4 +154,10 @@ export function swaggerRequest(getClient, operationPath, params, options = {}) {
 
 function normalizePayload(body, schema) {
   return normalize(body, schema);
+}
+
+export function resetRequests() {
+  return {
+    type: '@@swagger/RESET',
+  };
 }

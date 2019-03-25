@@ -6,6 +6,7 @@ import (
 	"math/rand"
 
 	"github.com/gobuffalo/pop"
+
 	"github.com/transcom/mymove/pkg/models"
 )
 
@@ -18,7 +19,7 @@ const defaultPocGeneralPhone = "(555) 101-0101"
 const defaultPocClaimsName = "Art Vandelay"
 const defaultPocClaimsEmail = "vandelay.ind@example.com"
 const defaultPocClaimsPhone = "(555) 321-4321"
-const defaultPayeeCode = "1234"
+const defaultPayeeCode = "2708"
 
 // RandomSCAC generates a random 4 figure string from allowed alphanumeric bytes to represent the SCAC.
 func RandomSCAC() string {
@@ -49,7 +50,7 @@ func MakeTSP(db *pop.Connection, assertions Assertions) models.TransportationSer
 
 	scac := assertions.TransportationServiceProvider.StandardCarrierAlphaCode
 	if scac == "" {
-		scac = "ABCD" //RandomSCAC()
+		scac = "ABBV" //Valid SCAC for Syncada sandbox environment
 	}
 
 	supplierID := assertions.TransportationServiceProvider.SupplierID

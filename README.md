@@ -130,9 +130,16 @@ The following commands will get mymove running on your machine for the first tim
 
 ### Setup: Prerequisites
 
-* Install Go version 1.11.4 with Homebrew. Make sure you do not have other installations.
-  * `brew install go@1.11.4`
-  * If a later Go version exists, Brew will warn you that "go@1.11.4 is keg-only, which means it was not symlinked". If that happens, add the following to your bash config: `export PATH="/usr/local/opt/go@1.11.4/bin:$PATH"`. This line needs to appear in the file before your Go paths are declared.
+* We tend to use the latest version of Go.
+  * Install it with Homebrew: `brew install go`
+  * Pin it, so that you don't accidentally upgrade before we upgrade the project: `brew pin go`
+  * When we upgrade the project's go version, unpin, upgrade, and then re-pin: `brew unpin go; brew upgrade go; brew pin go`
+  * **Note**: If you have previously modified your PATH to point to a specific version of go, make sure to remove that. This would be either in your `.bash_profile` or `.bashrc`, and might look something like `PATH=$PATH:/usr/local/opt/go@1.12/bin`.
+* Ensure you are using the latest version of bash for this project:
+  * Install it with Homebrew: `brew install bash`
+  * Update list of shells that users can choose from: `[[ $(cat /etc/shells | grep /usr/local/bin/bash) ]] || echo "/usr/local/bin/bash" | sudo tee -a /etc/shells`
+  * If you are using bash as your shell (and not zsh, fish, etc) and want to use the latest shell as well then change it (optional): `chsh -s /usr/local/bin/bash`
+  * Ensure that `/usr/local/bin` comes before `/bin` on your `$PATH` by running `echo $PATH`. Modify your path by editing `~/.bashrc` or `~/.bash_profile` and changing the `PATH`.  Then source your profile with `source ~/.bashrc` or `~/.bash_profile` to ensure that your terminal has it.
 * Run `bin/prereqs` and install everything it tells you to. _Do not configure PostgreSQL to automatically start at boot time or the DB commands will not work correctly!_
 * For managing local environment variables, we're using [direnv](https://direnv.net/). You need to [configure your shell to use it](https://direnv.net/). For bash, add the command `eval "$(direnv hook bash)"` to whichever file loads upon opening bash (likely `~./bash_profile`, though instructions say `~/.bashrc`).
 * Run `direnv allow` to load up the `.envrc` file. Add a `.envrc.local` file with any values it asks you to define.
@@ -170,7 +177,7 @@ Dependencies are managed by [dep](https://github.com/golang/dep). New dependenci
 
 The above will start the webpack dev server, serving the front-end on port 3000. If paired with `make server_run` then the whole app will work, the webpack dev server proxies all API calls through to the server.
 
-If both the server and client are running, you should be able to view the Swagger UI at <http://localhost:3000/api/v1/docs>.  If it does not, try running `make client_build` (this only needs to be run the first time).
+If both the server and client are running, you should be able to view the Swagger UI at <http://milmovelocal:3000/api/v1/docs>.  If it does not, try running `make client_build` (this only needs to be run the first time).
 
 Dependencies are managed by yarn. To add a new dependency, use `yarn add`
 
@@ -231,7 +238,7 @@ When creating new features, it is helpful to have sample data for the feature to
 
 * `make build_tools` will build the fake data generator binary
 * `bin/generate-test-data -named-scenario="e2e_basic"` will populate the database with a handful of users in various stages of progress along the flow. The emails are named accordingly (see [`e2ebasic.go`](https://github.com/transcom/mymove/blob/master/pkg/testdatagen/scenario/e2ebasic.go)). Alternatively, run `make db_populate_e2e` to reset your db and populate it with e2e user flow cases.
-* `bin/generate-test-data` will run binary and create a preconfigured set of test data. To determine the data scenario you'd like to use, check out scenarios in the `testdatagen` package. Each scenario contains a description of what data will be created when the scenario is run. Pass the scenario in as a flag to the generate-test-data function. A sample command: `./bin/generate-test-data -scenario=2`. If you'd like to further specify how the data should look, you can specify the number of awards for each TSP performance by use the flag `rounds` with one of three arguments: 'none', 'half', and 'full'. This will create the TSP performance records with either no rounds of awards completed, half a round, or a full round. It will default to none if not specified. To specify how many TSPs should be created, use the flag `numTSP`. It will default to 15 if not specified. A sample command: `./bin/generate-test-data -rounds=half -numTSP=6`. You can use the `numTSP` and `rounds` in conjunction, but you cannot use them with the pre-packaged scenarios.
+* `bin/generate-test-data` will run binary and create a preconfigured set of test data. To determine the data scenario you'd like to use, check out scenarios in the `testdatagen` package. Each scenario contains a description of what data will be created when the scenario is run. Pass the scenario in as a flag to the generate-test-data function. A sample command: `./bin/generate-test-data -scenario=2`.
 
 There is also a package (`/pkg/testdatagen`) that can be imported to create arbitrary test data. This could be used in tests, so as not to duplicate functionality.
 
@@ -260,11 +267,9 @@ You can view the API's documentation (powered by Swagger UI) at <http://localhos
 There are a few handy targets in the Makefile to help you run tests:
 
 * `make client_test`: Run front-end testing suites.
-* `make server_test`: Run back-end testing suites.
-* `make e2e_test`: Run e2e testing suite. To run locally, add an environment variable called SAUCE_ACCESS_KEY, which you can find in team DP3 Engineering Vault of 1Password under Sauce Labs or by logging in to Sauce itself. In 1Password, the access key is labeled SAUCE_ACCESS_KEY. This will run against our staging environment. If you want to point to another instance, add an environment variable called E2E_BASE with the base url for the instance. Note that to test a development instance, you must run `make server_run_standalone` and set up a tunnel (via ngrok or localtunnel).
+* `make server_test`: Run back-end testing suites. [Additional info for running go tests](https://github.com/transcom/mymove/blob/master/docs/how-to/run-go-tests.md)
+* `make e2e_test`: Run e2e testing suite.
 * `make test`: Run e2e, client- and server-side testing suites.
-
-To run an individual test: `go test ./pkg/rateengine/ -testify.m Test_Scenario1`
 
 ### Logging
 
@@ -291,6 +296,7 @@ There are a few handy targets in the Makefile to help you interact with the dev 
 * `make db_dev_create`: Waits to connect to the DB and will create a DB if one doesn't already exist (run usually as part of `db_dev_run`).
 * `make db_dev_reset`: Destroys your database container. Useful if you want to start from scratch.
 * `make db_dev_migrate`: Applies database migrations against your running database container.
+* `make db_dev_migrate_standalone`: Applies database migrations against your running database container but will not check for server dependencies first.
 * `make db_dev_e2e_populate`: Populate data with data used to run e2e tests
 
 #### Test DB Commands
@@ -301,6 +307,7 @@ The Dev Commands are used to talk to the dev DB.  If you were working with the t
 * `make db_test_create`
 * `make db_test_reset`
 * `make db_test_migrate`
+* `make db_test_migrate_standalone`
 * `make db_test_e2e_populate`
 
 The test DB commands all talk to the DB over localhost.  But in a docker-only environment (like CircleCI) you may not be able to use those commands, which is why `*_docker` versions exist for all of them:
@@ -309,7 +316,6 @@ The test DB commands all talk to the DB over localhost.  But in a docker-only en
 * `make db_test_create_docker`
 * `make db_test_reset_docker`
 * `make db_test_migrate_docker`
-* `make db_test_e2e_populate_docker`
 
 #### Migrations
 

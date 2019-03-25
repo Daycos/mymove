@@ -1,5 +1,5 @@
 import * as mime from 'mime-types';
-import { milmoveAppName, officeAppName, tspAppName } from './constants';
+import { milmoveAppName, officeAppName, tspAppName, longPageLoadTimeout } from './constants';
 
 /* global Cypress, cy */
 // ***********************************************
@@ -46,10 +46,12 @@ Cypress.Commands.add('signIntoMyMoveAsUser', userId => {
 Cypress.Commands.add('signIntoOffice', () => {
   cy.setupBaseUrl(officeAppName);
   cy.signInAsUser('9bfa91d2-7a0c-4de0-ae02-b8cf8b4b858b');
+  cy.waitForReactTableLoad();
 });
 Cypress.Commands.add('signIntoTSP', () => {
   cy.setupBaseUrl(tspAppName);
   cy.signInAsUser('6cd03e5b-bee8-4e97-a340-fecb8f3d5465');
+  cy.waitForReactTableLoad();
 });
 Cypress.Commands.add('signInAsUser', userId => {
   // make sure we log out first before sign in
@@ -65,18 +67,42 @@ Cypress.Commands.add('signInAsUser', userId => {
 // Reloads the page but makes an attempt to wait for the loading screen to disappear
 Cypress.Commands.add('patientReload', () => {
   cy.reload();
-  cy.waitForLoadingScreen(10000);
+  cy.waitForLoadingScreen();
 });
 
 // Visits a given URL but makes an attempt to wait for the loading screen to disappear
 Cypress.Commands.add('patientVisit', url => {
   cy.visit(url);
-  cy.waitForLoadingScreen(10000);
+  cy.waitForLoadingScreen();
 });
 
 // Waits for the loading screen to disappear for a given amount of milliseconds
-Cypress.Commands.add('waitForLoadingScreen', ms => {
+Cypress.Commands.add('waitForLoadingScreen', (ms = longPageLoadTimeout) => {
   cy.get('h2[data-name="loading-placeholder"]', { timeout: ms }).should('not.exist');
+});
+
+// Attempts to double-click a given move locator in a shipment queue list
+Cypress.Commands.add('waitForReactTableLoad', () => {
+  // Wait for ReactTable loading to be completed
+  cy.get('.ReactTable').within(() => {
+    cy.get('.-loading.-active', { timeout: longPageLoadTimeout }).should('not.exist');
+  });
+});
+
+// Attempts to double-click a given move locator in a shipment queue list
+Cypress.Commands.add('selectQueueItemMoveLocator', moveLocator => {
+  cy.waitForReactTableLoad();
+
+  cy
+    .get('div')
+    .contains(moveLocator)
+    .dblclick();
+
+  cy.waitForLoadingScreen();
+});
+
+Cypress.Commands.add('setFeatureFlag', (flagVal, url = '/queues/new') => {
+  cy.visit(`${url}?flag:${flagVal}`);
 });
 
 Cypress.Commands.add(
@@ -157,10 +183,18 @@ Cypress.Commands.add(
 );
 
 Cypress.Commands.add('logout', () => {
-  // The session cookie wasn't being cleared out after doing a get request even though the Set-Cookie
-  // header was present. Switching to cy.visit() fixed the problem, but it's not clear why this worked.
-  // Seems like others using Cypress have similar issues: https://github.com/cypress-io/cypress/issues/781
-  cy.visit('/auth/logout');
+  cy.clearCookies();
+  cy.patientVisit('/');
+  cy.getCookie('masked_gorilla_csrf').then(cookie => {
+    cy.request({
+      url: '/auth/logout',
+      method: 'POST',
+      headers: { 'x-csrf-token': cookie.value },
+    });
+
+    // In case of login redirect we once more go to the homepage
+    cy.patientVisit('/');
+  });
 });
 
 Cypress.Commands.add('nextPage', () => {
@@ -225,6 +259,23 @@ function genericSelect(inputData, fieldName, classSelector) {
     .click();
 }
 
+Cypress.Commands.add('typeInInput', ({ name, value }) => {
+  cy
+    .get(`input[name="${name}"]`)
+    .clear()
+    .type(value)
+    .blur();
+});
+
+// function typeInTextArea({ name, value }) {
+Cypress.Commands.add('typeInTextarea', ({ name, value }) => {
+  cy
+    .get(`textarea[name="${name}"]`)
+    .clear()
+    .type(value)
+    .blur();
+});
+
 Cypress.Commands.add('selectDutyStation', (stationName, fieldName) => {
   let classSelector = '.duty-input-box';
   genericSelect(stationName, fieldName, classSelector);
@@ -251,4 +302,14 @@ Cypress.Commands.add('setupBaseUrl', appname => {
     default:
       break;
   }
+});
+
+Cypress.Commands.add('removeFetch', () => {
+  // cypress server/route/wait currently does not support window.fetch api
+  // https://github.com/cypress-io/cypress/issues/95#issuecomment-347607198
+  // delete window.fetch to force fallback to supported xhr.
+  // https://github.com/cypress-io/cypress-example-recipes/tree/master/examples/stubbing-spying__window-fetch
+  cy.on('window:before:load', win => {
+    delete win.fetch;
+  });
 });

@@ -8,6 +8,7 @@ import (
 	"github.com/gobuffalo/pop"
 	"github.com/pkg/errors"
 
+	"github.com/transcom/mymove/pkg/dates"
 	"github.com/transcom/mymove/pkg/gen/internalmessages"
 	"github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/unit"
@@ -65,7 +66,7 @@ func MakeDefaultShipmentOffer(db *pop.Connection) models.ShipmentOffer {
 // CreateShipmentOfferData creates a list of TSP Users, Shipments, and Shipment Offers
 // Must pass in the number of tsp users to create and number of shipments.
 // The split of shipment offers should be the length of TSP users and the sum should equal the number of shipments
-func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments int, numShipmentOfferSplit []int, statuses []models.ShipmentStatus) ([]models.TspUser, []models.Shipment, []models.ShipmentOffer, error) {
+func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments int, numShipmentOfferSplit []int, statuses []models.ShipmentStatus, moveType models.SelectedMoveType) ([]models.TspUser, []models.Shipment, []models.ShipmentOffer, error) {
 	var tspUserList []models.TspUser
 	var shipmentList []models.Shipment
 	var shipmentOfferList []models.ShipmentOffer
@@ -112,7 +113,6 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 	market := "dHHG"
 	sourceGBLOC := "KKFA"
 	destinationGBLOC := "HAFC"
-	selectedMoveType := models.SelectedMoveTypeHHG
 	if len(statuses) == 0 {
 		// Statuses for shipments attached to a shipment offer should not be DRAFT or SUBMITTED
 		// because this should be after the award queue has run and SUBMITTED shipments have been awarded
@@ -138,6 +138,7 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 	})
 
 	var tariffDataShipment *models.Shipment
+	var pickupDate *time.Time
 	for i := 1; i <= numShipments; i++ {
 		// Service Member Details
 		smEmail := fmt.Sprintf("leo_spaceman_sm_%d@example.com", i)
@@ -187,7 +188,7 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 				SpouseHasProGear: true,
 			},
 			Move: models.Move{
-				SelectedMoveType: &selectedMoveType,
+				SelectedMoveType: &moveType,
 				Status:           moveStatus,
 			},
 			Shipment: models.Shipment{
@@ -203,6 +204,7 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 
 		durIndex := time.Duration(i + 1)
 
+		calendar := dates.NewUSCalendar()
 		// Set dates based on status
 		if shipmentStatus == models.ShipmentStatusINTRANSIT || shipmentStatus == models.ShipmentStatusDELIVERED {
 			plusOneWeek := shipment.BookDate.Add(OneWeek)
@@ -213,17 +215,36 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 			shipment.PmSurveyPlannedDeliveryDate = &plusTwoWeeks
 			shipment.ActualPackDate = shipment.BookDate
 			// For sortability, we need varying pickup dates
-			pickupDate := shipment.BookDate.Add(OneDay * durIndex)
-			shipment.ActualPickupDate = &pickupDate
+			if pickupDate == nil {
+				newDate := dates.NextWorkday(*calendar, *shipment.BookDate)
+				pickupDate = &newDate
+			} else {
+				newDate := dates.NextWorkday(*calendar, *pickupDate)
+				pickupDate = &newDate
+			}
+			shipment.ActualPickupDate = pickupDate
 
 			shipment.NetWeight = shipment.WeightEstimate
 
 			tariffDataShipment = &shipment
+
+			distanceCalc := MakeDistanceCalculation(db, Assertions{
+				DistanceCalculation: models.DistanceCalculation{
+					DistanceMiles:        1044,
+					OriginAddress:        *shipment.PickupAddress,
+					OriginAddressID:      shipment.PickupAddress.ID,
+					DestinationAddress:   shipment.Move.Orders.NewDutyStation.Address,
+					DestinationAddressID: shipment.Move.Orders.NewDutyStation.Address.ID,
+				},
+			})
+
+			shipment.ShippingDistance = distanceCalc
+			shipment.ShippingDistanceID = &distanceCalc.ID
 		}
 
 		if shipmentStatus == models.ShipmentStatusDELIVERED {
 			// For sortability, we need varying delivery dates
-			deliveryDate := shipment.BookDate.Add(OneWeek * durIndex)
+			deliveryDate := dates.NextWorkday(*calendar, shipment.BookDate.Add(OneWeek*durIndex))
 			shipment.ActualDeliveryDate = &deliveryDate
 		}
 
@@ -307,12 +328,15 @@ func CreateShipmentOfferData(db *pop.Connection, numTspUsers int, numShipments i
 }
 
 func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment) {
+	weightLower := unit.Pound(shipment.NetWeight.Int() - 100)
+	weightUpper := unit.Pound(shipment.NetWeight.Int() + 100)
+
 	// $4861 is the cost for a 2000 pound move traveling 1044 miles (90210 to 80011).
 	baseLinehaul := models.Tariff400ngLinehaulRate{
 		DistanceMilesLower: 1001,
 		DistanceMilesUpper: 1101,
-		WeightLbsLower:     2000,
-		WeightLbsUpper:     2100,
+		WeightLbsLower:     weightLower,
+		WeightLbsUpper:     weightUpper,
 		RateCents:          386400,
 		Type:               "ConusLinehaul",
 		EffectiveDateLower: PerformancePeriodStart,
@@ -352,8 +376,8 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 
 	fullPackRate := models.Tariff400ngFullPackRate{
 		Schedule:           sa1.ServicesSchedule,
-		WeightLbsLower:     0,
-		WeightLbsUpper:     16001,
+		WeightLbsLower:     weightLower,
+		WeightLbsUpper:     weightUpper,
 		RateCents:          6714,
 		EffectiveDateLower: PerformancePeriodStart,
 		EffectiveDateUpper: PerformancePeriodEnd,
@@ -368,12 +392,34 @@ func createTariffDataForRateEngine(db *pop.Connection, shipment models.Shipment)
 	}
 	mustSave(db, &fullUnpackRate)
 
+	// Set up item rates for SIT-related charges
+	itemRate210A := models.Tariff400ngItemRate{
+		Code:               "210A",
+		Schedule:           &sa2.SITPDSchedule,
+		WeightLbsLower:     weightLower,
+		WeightLbsUpper:     weightUpper,
+		RateCents:          unit.Cents(57600),
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
+	}
+	mustSave(db, &itemRate210A)
+	itemRate225A := models.Tariff400ngItemRate{
+		Code:               "225A",
+		Schedule:           &sa2.ServicesSchedule,
+		WeightLbsLower:     weightLower,
+		WeightLbsUpper:     weightUpper,
+		RateCents:          unit.Cents(9900),
+		EffectiveDateLower: PerformancePeriodStart,
+		EffectiveDateUpper: PerformancePeriodEnd,
+	}
+	mustSave(db, &itemRate225A)
+
 	// Set up item codes
 	codeLHS := models.Tariff400ngItem{
 		Code:                "LHS",
 		Item:                "Linehaul Transportation",
 		DiscountType:        models.Tariff400ngItemDiscountTypeHHG,
-		AllowedLocation:     models.Tariff400ngItemAllowedLocationNEITHER,
+		AllowedLocation:     models.Tariff400ngItemAllowedLocationORIGIN,
 		MeasurementUnit1:    models.Tariff400ngItemMeasurementUnitFLATRATE,
 		MeasurementUnit2:    models.Tariff400ngItemMeasurementUnitNONE,
 		RateRefCode:         models.Tariff400ngItemRateRefCodeTARIFFSECTION,

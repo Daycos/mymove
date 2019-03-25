@@ -1,10 +1,13 @@
 package publicapi
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/pkg/errors"
+
+	"github.com/transcom/mymove/pkg/services"
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
@@ -12,7 +15,6 @@ import (
 	"github.com/gofrs/uuid"
 	"go.uber.org/zap"
 
-	"github.com/transcom/mymove/pkg/assets"
 	"github.com/transcom/mymove/pkg/auth"
 	"github.com/transcom/mymove/pkg/gen/apimessages"
 	shipmentop "github.com/transcom/mymove/pkg/gen/restapi/apioperations/shipments"
@@ -20,25 +22,41 @@ import (
 	"github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/paperwork"
 	"github.com/transcom/mymove/pkg/rateengine"
-	shipmentservice "github.com/transcom/mymove/pkg/service/shipment"
+	paperworkservice "github.com/transcom/mymove/pkg/services/paperwork"
+	shipmentservice "github.com/transcom/mymove/pkg/services/shipment"
 	uploaderpkg "github.com/transcom/mymove/pkg/uploader"
 )
+
+func payloadForDistanceCalculationModel(d models.DistanceCalculation) *apimessages.DistanceCalculation {
+	if d.ID == uuid.Nil {
+		return nil
+	}
+
+	return &apimessages.DistanceCalculation{
+		OriginAddress:      payloadForAddressModel(&d.OriginAddress),
+		DestinationAddress: payloadForAddressModel(&d.DestinationAddress),
+		DistanceMiles:      int64(d.DistanceMiles),
+	}
+}
 
 func payloadForShipmentModel(s models.Shipment) *apimessages.Shipment {
 	shipmentpayload := &apimessages.Shipment{
 		ID:               *handlers.FmtUUID(s.ID),
 		Status:           apimessages.ShipmentStatus(s.Status),
-		SourceGbloc:      apimessages.GBLOC(*s.SourceGBLOC),
-		DestinationGbloc: apimessages.GBLOC(*s.DestinationGBLOC),
+		SourceGbloc:      payloadForGBLOC(s.SourceGBLOC),
+		DestinationGbloc: payloadForGBLOC(s.DestinationGBLOC),
 		GblNumber:        s.GBLNumber,
-		Market:           apimessages.ShipmentMarket(*s.Market),
+		Market:           payloadForMarkets(s.Market),
 		CreatedAt:        strfmt.DateTime(s.CreatedAt),
 		UpdatedAt:        strfmt.DateTime(s.UpdatedAt),
 
 		// associations
-		TrafficDistributionList: payloadForTrafficDistributionListModel(s.TrafficDistributionList),
-		ServiceMember:           payloadForServiceMemberModel(&s.ServiceMember),
-		Move:                    payloadForMoveModel(&s.Move),
+		TrafficDistributionListID: handlers.FmtUUIDPtr(s.TrafficDistributionListID),
+		TrafficDistributionList:   payloadForTrafficDistributionListModel(s.TrafficDistributionList),
+		ServiceMemberID:           strfmt.UUID(s.ServiceMemberID.String()),
+		ServiceMember:             payloadForServiceMemberModel(&s.ServiceMember),
+		MoveID:                    strfmt.UUID(s.MoveID.String()),
+		Move:                      payloadForMoveModel(&s.Move),
 
 		// dates
 		ActualPickupDate:     handlers.FmtDatePtr(s.ActualPickupDate),
@@ -69,6 +87,9 @@ func payloadForShipmentModel(s models.Shipment) *apimessages.Shipment {
 		NetWeight:                   handlers.FmtPoundPtr(s.NetWeight),
 		GrossWeight:                 handlers.FmtPoundPtr(s.GrossWeight),
 		TareWeight:                  handlers.FmtPoundPtr(s.TareWeight),
+
+		// distance
+		ShippingDistance: payloadForDistanceCalculationModel(s.ShippingDistance),
 
 		// pre-move survey
 		PmSurveyConductedDate:               handlers.FmtDatePtr(s.PmSurveyConductedDate),
@@ -137,6 +158,10 @@ func (h GetShipmentHandler) Handle(params shipmentop.GetShipmentParams) middlewa
 	if session.IsTspUser() {
 		// Check that the TSP user can access the shipment
 		tspUser, err := models.FetchTspUserByID(h.DB(), session.TspUserID)
+		if err != nil {
+			h.Logger().Error("Error retrieving authenticated TSP user", zap.Error(err))
+			return shipmentop.NewGetShipmentForbidden()
+		}
 		shipment, err = models.FetchShipmentByTSP(h.DB(), tspUser.TransportationServiceProviderID, shipmentID)
 		if err != nil {
 			h.Logger().Error("Error fetching shipment for TSP user", zap.Error(err))
@@ -147,6 +172,15 @@ func (h GetShipmentHandler) Handle(params shipmentop.GetShipmentParams) middlewa
 		if err != nil {
 			h.Logger().Error("Error fetching shipment for office user", zap.Error(err))
 			return shipmentop.NewGetShipmentForbidden()
+		}
+	} else if session.IsServiceMember() {
+		shipment, err = models.FetchShipment(h.DB(), session, shipmentID)
+		if err != nil {
+			h.Logger().Error("Error fetching shipment for service member", zap.Error(err))
+			if err == models.ErrFetchForbidden {
+				return shipmentop.NewGetShipmentForbidden()
+			}
+			return shipmentop.NewGetShipmentBadRequest()
 		}
 	} else {
 		return shipmentop.NewGetShipmentForbidden()
@@ -320,11 +354,12 @@ func (h DeliverShipmentHandler) Handle(params shipmentop.DeliverShipmentParams) 
 	}
 
 	actualDeliveryDate := (time.Time)(*params.Payload.ActualDeliveryDate)
-	engine := rateengine.NewRateEngine(h.DB(), h.Logger(), h.Planner())
+	engine := rateengine.NewRateEngine(h.DB(), h.Logger())
 
 	verrs, err := shipmentservice.DeliverAndPriceShipment{
-		DB:     h.DB(),
-		Engine: engine,
+		DB:      h.DB(),
+		Engine:  engine,
+		Planner: h.Planner(),
 	}.Call(actualDeliveryDate, shipment)
 
 	if err != nil || verrs.HasAny() {
@@ -537,6 +572,10 @@ func (h PatchShipmentHandler) Handle(params shipmentop.PatchShipmentParams) midd
 	if session.IsTspUser() {
 		// Check that the TSP user can access the shipment
 		tspUser, err := models.FetchTspUserByID(h.DB(), session.TspUserID)
+		if err != nil {
+			h.Logger().Error("Error retrieving authenticated TSP user", zap.Error(err))
+			return shipmentop.NewGetShipmentForbidden()
+		}
 		shipment, err = models.FetchShipmentByTSP(h.DB(), tspUser.TransportationServiceProviderID, shipmentID)
 		if err != nil {
 			h.Logger().Error("Error fetching shipment for TSP user", zap.Error(err))
@@ -566,6 +605,7 @@ func (h PatchShipmentHandler) Handle(params shipmentop.PatchShipmentParams) midd
 // CreateGovBillOfLadingHandler creates a GBL PDF & uploads it as a document associated to a move doc, shipment and move
 type CreateGovBillOfLadingHandler struct {
 	handlers.HandlerContext
+	pdfFormCreator services.FormCreator
 }
 
 // Handle generates the GBL PDF & uploads it as a document associated to a move doc, shipment and move
@@ -610,37 +650,19 @@ func (h CreateGovBillOfLadingHandler) Handle(params shipmentop.CreateGovBillOfLa
 	}
 	formLayout := paperwork.Form1203Layout
 
-	// Read in bytes from Asset pkg
-	data, err := assets.Asset(formLayout.TemplateImagePath)
+	template, err := paperworkservice.MakeFormTemplate(gbl, gbl.GBLNumber1, formLayout, services.GBL)
 	if err != nil {
-		h.Logger().Error("Error reading template file", zap.Error(err))
-		return shipmentop.NewCreateGovBillOfLadingInternalServerError()
+		h.Logger().Error(errors.Cause(err).Error(), zap.Error(errors.Cause(err)))
 	}
 
-	templateBuffer := bytes.NewReader(data)
-	formFiller := paperwork.NewFormFiller()
-
-	// Populate form fields with GBL data
-	err = formFiller.AppendPage(templateBuffer, formLayout.FieldsLayout, gbl)
+	gblFile, err := h.pdfFormCreator.CreateForm(template)
 	if err != nil {
-		h.Logger().Error("Failure writing GBL data to form.", zap.Error(err))
-		return shipmentop.NewCreateGovBillOfLadingInternalServerError()
-	}
-
-	aFile, err := h.FileStorer().FileSystem().Create(gbl.GBLNumber1)
-	if err != nil {
-		h.Logger().Error("Error creating a new afero file for GBL form.", zap.Error(err))
-		return shipmentop.NewCreateGovBillOfLadingInternalServerError()
-	}
-
-	err = formFiller.Output(aFile)
-	if err != nil {
-		h.Logger().Error("Failure exporting GBL form to file.", zap.Error(err))
+		h.Logger().Error(errors.Cause(err).Error(), zap.Error(errors.Cause(err)))
 		return shipmentop.NewCreateGovBillOfLadingInternalServerError()
 	}
 
 	uploader := uploaderpkg.NewUploader(h.DB(), h.Logger(), h.FileStorer())
-	upload, verrs, err := uploader.CreateUpload(nil, *tspUser.UserID, aFile)
+	upload, verrs, err := uploader.CreateUpload(*tspUser.UserID, &gblFile, uploaderpkg.AllowedTypesPDF)
 	if err != nil || verrs.HasAny() {
 		return handlers.ResponseForVErrors(h.Logger(), verrs, err)
 	}

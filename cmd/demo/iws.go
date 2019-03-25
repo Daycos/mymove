@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/namsral/flag"
+
 	"github.com/transcom/mymove/pkg/iws"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	flag.Parse()
 
 	// Load client cert
-	rbs, err := iws.NewRealTimeBrokerService(*host, *dodCaCertPackage, *moveMilDODTLSCert, *moveMilDODTLSKey)
+	rbs, err := iws.NewRBSPersonLookup(*host, *dodCaCertPackage, *moveMilDODTLSCert, *moveMilDODTLSKey)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
@@ -45,7 +46,7 @@ func main() {
 	os.Exit(retcode)
 }
 
-func edi(rbs iws.RealTimeBrokerService, edipi uint64) int {
+func edi(rbs iws.RBSPersonLookup, edipi uint64) int {
 	fmt.Printf("Identity Web Services: Real-Time Broker Service (REST)\nHost: %s\nOperation: edi\nEDIPI: %d\n", rbs.Host, edipi)
 	person, personnel, err := rbs.GetPersonUsingEDIPI(edipi)
 
@@ -63,7 +64,7 @@ func edi(rbs iws.RealTimeBrokerService, edipi uint64) int {
 	return 0
 }
 
-func pids(rbs iws.RealTimeBrokerService, ssn string, lastName string, firstName string) int {
+func pids(rbs iws.RBSPersonLookup, ssn string, lastName string, firstName string) int {
 	fmt.Printf("Identity Web Services: Real-Time Broker Service (REST)\nHost: %s\nOperation: pids-P\nSSN: %s\nLast Name: %s\nFirst Name: %s\n", rbs.Host, ssn, lastName, firstName)
 
 	params := iws.GetPersonUsingSSNParams{
@@ -87,7 +88,7 @@ func pids(rbs iws.RealTimeBrokerService, ssn string, lastName string, firstName 
 	return 0
 }
 
-func wkEma(rbs iws.RealTimeBrokerService, email string) int {
+func wkEma(rbs iws.RBSPersonLookup, email string) int {
 	fmt.Printf("Identity Web Services: Real-Time Broker Service (REST)\nHost: %s\nOperation: wkEma\nWork E-mail: %s\n", rbs.Host, email)
 	edipi, person, personnel, err := rbs.GetPersonUsingWorkEmail(email)
 

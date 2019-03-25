@@ -1,15 +1,17 @@
 import React, { Fragment } from 'react';
+import { connect } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { get, includes } from 'lodash';
+import { get, includes, isEmpty } from 'lodash';
 import moment from 'moment';
 import fedHolidays from '@18f/us-federal-holidays';
 
 import { ppmInfoPacket, hhgInfoPacket } from 'shared/constants';
 import Alert from 'shared/Alert';
 import { formatCents, formatCentsRange } from 'shared/formatters';
-import { withContext } from 'shared/AppContext';
 import TransportationOfficeContactInfo from 'shared/TransportationOffices/TransportationOfficeContactInfo';
+import TransportationServiceProviderContactInfo from 'scenes/TransportationServiceProvider/ContactInfo';
 import truck from 'shared/icon/truck-gray.svg';
+import { selectReimbursement } from 'shared/Entities/modules/ppms';
 
 import './MoveSummary.css';
 import ppmCar from './images/ppm-car.svg';
@@ -204,7 +206,7 @@ const showHhgLandingPageText = shipment => {
 };
 
 export const SubmittedHhgMoveSummary = props => {
-  const { shipment, move, addPPMShipment, hhgAndPpmEnabled } = props;
+  const { shipment, move, addPPMShipment } = props;
   const selectedMoveType = get(move, 'selected_move_type');
   const moveId = get(move, 'id');
   const showAddShipmentLink =
@@ -232,19 +234,7 @@ export const SubmittedHhgMoveSummary = props => {
               <div className="status_box usa-width-two-thirds">
                 {showHhgLandingPageText(shipment)}
                 {(shipment.actual_pack_date || today.isSameOrAfter(shipment.pm_survey_planned_pack_date)) && (
-                  <div className="step">
-                    {/* TODO: redo text once we have the proper text to place here.
-                        reference: https://www.pivotaltracker.com/story/show/161939484
-                    <div className="title">File a Claim</div>
-                    <div>
-                      If you have household goods damaged or lost during the move, contact{' '}
-                      <span className="Todo-phase2">Able Movers Claims</span> to file a claim:{' '}
-                      <span className="Todo-phase2">(567) 980-4321.</span> If, after attempting to work with them, you
-                      do not feel that you are receiving adequate compensation, contact the Military Claims Office for
-                      help.
-                    </div>
-                    */}
-                  </div>
+                  <TransportationServiceProviderContactInfo showFileAClaimInfo shipmentId={shipment.id} />
                 )}
               </div>
               <div className="usa-width-one-third">
@@ -262,32 +252,31 @@ export const SubmittedHhgMoveSummary = props => {
           </div>
         </div>
       </div>
-      {showAddShipmentLink &&
-        hhgAndPpmEnabled && (
-          <div className="ppm-panel">
-            <div className="shipment_box">
-              <div className="shipment_type">
-                <img className="move_sm" src={ppmCar} alt="ppm-car" />
-                Move your own stuff (PPM)
-              </div>
-              <div className="shipment_box_contents">
-                <div className="step-contents">
-                  <div className="status_box">
-                    <div className="step">
-                      <div className="title">Are you moving any items yourself or hiring your own mover?</div>
-                      <div>Tell us about your move to see if you're eligible for additional payment.</div>
-                    </div>
-                    <div className="step">
-                      <button className="usa-button-secondary" onClick={() => addPPMShipment(moveId)}>
-                        <FontAwesomeIcon icon={faPlus} /> Add PPM (DITY) Move
-                      </button>
-                    </div>
+      {showAddShipmentLink && (
+        <div className="ppm-panel">
+          <div className="shipment_box">
+            <div className="shipment_type">
+              <img className="move_sm" src={ppmCar} alt="ppm-car" />
+              Move your own stuff (PPM)
+            </div>
+            <div className="shipment_box_contents">
+              <div className="step-contents">
+                <div className="status_box">
+                  <div className="step">
+                    <div className="title">Are you moving any items yourself or hiring your own mover?</div>
+                    <div>Tell us about your move to see if you're eligible for additional payment.</div>
+                  </div>
+                  <div className="step">
+                    <button className="usa-button-secondary" onClick={() => addPPMShipment(moveId)}>
+                      <FontAwesomeIcon icon={faPlus} /> Add PPM (DITY) Move
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
     </Fragment>
   );
 };
@@ -295,7 +284,7 @@ export const SubmittedHhgMoveSummary = props => {
 export const ApprovedMoveSummary = props => {
   const { ppm, move, requestPaymentSuccess } = props;
   const paymentRequested = ppm.status === 'PAYMENT_REQUESTED';
-  const moveInProgress = moment(ppm.planned_move_date, 'YYYY-MM-DD').isSameOrBefore();
+  const moveInProgress = moment(ppm.original_move_date, 'YYYY-MM-DD').isSameOrBefore();
   return (
     <Fragment>
       <div>
@@ -374,14 +363,12 @@ export const ApprovedMoveSummary = props => {
   );
 };
 
-const PPMMoveDetails = props => {
-  const { ppm } = props;
+const PPMMoveDetailsPanel = props => {
+  const { advance, ppm } = props;
   const privateStorageString = get(ppm, 'estimated_storage_reimbursement')
     ? `(up to ${ppm.estimated_storage_reimbursement})`
     : '';
-  const advanceString = ppm.has_requested_advance
-    ? `Advance Requested: $${formatCents(ppm.advance.requested_amount)}`
-    : '';
+  const advanceString = ppm.has_requested_advance ? `Advance Requested: $${formatCents(advance.requested_amount)}` : '';
   const hasSitString = `Temp. Storage: ${ppm.days_in_storage} days ${privateStorageString}`;
 
   return (
@@ -394,6 +381,14 @@ const PPMMoveDetails = props => {
     </div>
   );
 };
+
+const mapStateToPPMMoveDetailsProps = (state, ownProps) => {
+  const { ppm } = ownProps;
+  const advance = selectReimbursement(state, ownProps.ppm.advance);
+  return { ppm, advance };
+};
+
+const PPMMoveDetails = connect(mapStateToPPMMoveDetailsProps)(PPMMoveDetailsPanel);
 
 const HhgMoveDetails = props => {
   return (
@@ -420,7 +415,7 @@ const MoveInfoHeader = props => {
         {get(orders, 'new_duty_station.name', 'New move')} (from {get(profile, 'current_station.name', '')})
       </h2>
       {get(move, 'locator') && <div>Move Locator: {get(move, 'locator')}</div>}
-      {entitlement && (
+      {!isEmpty(entitlement) && (
         <div>
           Weight Entitlement: <span>{entitlement.sum.toLocaleString()} lbs</span>
         </div>
@@ -473,7 +468,7 @@ const getHHGStatus = (moveStatus, shipment) => {
     : 'DRAFT';
 };
 
-export const MoveSummary = withContext(props => {
+export const MoveSummary = props => {
   const {
     profile,
     move,
@@ -496,7 +491,6 @@ export const MoveSummary = withContext(props => {
   const hhgStatus = getHHGStatus(moveStatus, shipment);
   const HHGComponent = hhgSummaryStatusComponents[hhgStatus]; // eslint-disable-line security/detect-object-injection
   const PPMComponent = ppmSummaryStatusComponents[getPPMStatus(moveStatus, ppm, selectedMoveType)];
-  const hhgAndPpmEnabled = get(props, 'context.flags.hhgAndPpm', false);
   const showAddShipmentLink =
     selectedMoveType === 'HHG' &&
     ['SUBMITTED', 'ACCEPTED', 'AWARDED', 'APPROVED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED'].includes(move.status);
@@ -533,7 +527,6 @@ export const MoveSummary = withContext(props => {
               reviewProfile={reviewProfile}
               requestPaymentSuccess={requestPaymentSuccess}
               addPPMShipment={addPPMShipment}
-              hhgAndPpmEnabled={hhgAndPpmEnabled}
             />
           )}
           {showPPM && (
@@ -563,13 +556,12 @@ export const MoveSummary = withContext(props => {
             </button>
           </div>
           <div>
-            {showAddShipmentLink &&
-              hhgAndPpmEnabled && (
-                <button className="link" onClick={() => addPPMShipment(moveId)}>
-                  <FontAwesomeIcon icon={faPlus} />
-                  <span> Add PPM (DITY) Move</span>
-                </button>
-              )}
+            {showAddShipmentLink && (
+              <button className="link" onClick={() => addPPMShipment(moveId)}>
+                <FontAwesomeIcon icon={faPlus} />
+                <span> Add PPM (DITY) Move</span>
+              </button>
+            )}
           </div>
           <div className="contact_block">
             <div className="title">Contacts</div>
@@ -577,15 +569,10 @@ export const MoveSummary = withContext(props => {
             {hhgStatus !== 'CANCELED' && (
               <TransportationOfficeContactInfo dutyStation={get(orders, 'new_duty_station')} />
             )}
-            {showTsp && (
-              <div className="titled_block">
-                <strong>TSP name</strong>
-                <div>phone #</div>
-              </div>
-            )}
+            {showTsp && <TransportationServiceProviderContactInfo shipmentId={shipment.id} />}
           </div>
         </div>
       </div>
     </div>
   );
-});
+};

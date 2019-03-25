@@ -1,10 +1,9 @@
 import React from 'react';
-import { shallow, mount } from 'enzyme';
+import { mount } from 'enzyme';
 import { Provider } from 'react-redux';
 import configureStore from 'redux-mock-store';
 
 import Dates from '.';
-import { DatesDisplay } from '.';
 
 describe('DatesPanel tests', () => {
   let wrapper;
@@ -30,7 +29,7 @@ describe('DatesPanel tests', () => {
   let store;
 
   beforeEach(() => {
-    store = mockStore({});
+    store = mockStore({ requests: { lastErrors: [] } });
     //mount appears to be necessary to get inner components to load (i.e. tests fail with shallow)
     wrapper = mount(
       <Provider store={store}>

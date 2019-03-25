@@ -3,6 +3,8 @@ package internalapi
 import (
 	"time"
 
+	"github.com/transcom/mymove/pkg/models"
+
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/swag"
 
@@ -26,14 +28,19 @@ func (h ShowPPMIncentiveHandler) Handle(params ppmop.ShowPPMIncentiveParams) mid
 	if !session.IsOfficeUser() {
 		return ppmop.NewShowPPMIncentiveForbidden()
 	}
-	engine := rateengine.NewRateEngine(h.DB(), h.Logger(), h.Planner())
+	engine := rateengine.NewRateEngine(h.DB(), h.Logger())
 
-	lhDiscount, _, err := PPMDiscountFetch(h.DB(),
+	lhDiscount, _, err := models.PPMDiscountFetch(h.DB(),
 		h.Logger(),
 		params.OriginZip,
 		params.DestinationZip,
-		time.Time(params.PlannedMoveDate),
+		time.Time(params.OriginalMoveDate),
 	)
+	if err != nil {
+		return handlers.ResponseForError(h.Logger(), err)
+	}
+
+	distanceMiles, err := h.Planner().Zip5TransitDistance(params.OriginZip, params.DestinationZip)
 	if err != nil {
 		return handlers.ResponseForError(h.Logger(), err)
 	}
@@ -41,7 +48,8 @@ func (h ShowPPMIncentiveHandler) Handle(params ppmop.ShowPPMIncentiveParams) mid
 	cost, err := engine.ComputePPM(unit.Pound(params.Weight),
 		params.OriginZip,
 		params.DestinationZip,
-		time.Time(params.PlannedMoveDate),
+		distanceMiles,
+		time.Time(params.OriginalMoveDate),
 		0, // We don't want any SIT charges
 		lhDiscount,
 		0.0,

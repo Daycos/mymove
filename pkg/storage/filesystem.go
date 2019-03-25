@@ -1,17 +1,16 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/afero"
-	"go.uber.org/zap"
 )
 
 // Filesystem is a storage backend that uses the local filesystem. It is intended only
@@ -19,25 +18,26 @@ import (
 type Filesystem struct {
 	root    string
 	webRoot string
-	logger  *zap.Logger
+	logger  Logger
 	fs      *afero.Afero
+	tempFs  *afero.Afero
 }
 
 // FilesystemParams contains parameter for instantiating a Filesystem storage backend
 type FilesystemParams struct {
 	root    string
 	webRoot string
-	logger  *zap.Logger
+	logger  Logger
 }
 
-// DefaultFilesystemParams returns default values for FilesystemParams
-func DefaultFilesystemParams(logger *zap.Logger) FilesystemParams {
-	absTmpPath, err := filepath.Abs("tmp")
+// NewFilesystemParams returns FilesystemParams after checking path
+func NewFilesystemParams(localStorageRoot string, localStorageWebRoot string, logger Logger) FilesystemParams {
+	absTmpPath, err := filepath.Abs(localStorageRoot)
 	if err != nil {
-		log.Fatalln(errors.New("could not get absolute path for tmp"))
+		log.Fatalln(fmt.Errorf("could not get absolute path for %s", localStorageRoot))
 	}
-	storagePath := path.Join(absTmpPath, "storage")
-	webRoot := "/" + "storage"
+	storagePath := path.Join(absTmpPath, localStorageWebRoot)
+	webRoot := "/" + localStorageWebRoot
 
 	return FilesystemParams{
 		root:    storagePath,
@@ -46,15 +46,17 @@ func DefaultFilesystemParams(logger *zap.Logger) FilesystemParams {
 	}
 }
 
-// NewFilesystem creates a new S3 using the provided AWS session.
+// NewFilesystem creates a new Filesystem struct using the provided FilesystemParams
 func NewFilesystem(params FilesystemParams) *Filesystem {
-	var fs = afero.NewMemMapFs()
+	var fs = afero.NewOsFs()
+	var tempFs = afero.NewMemMapFs()
 
 	return &Filesystem{
 		root:    params.root,
 		webRoot: params.webRoot,
 		logger:  params.logger,
 		fs:      &afero.Afero{Fs: fs},
+		tempFs:  &afero.Afero{Fs: tempFs},
 	}
 }
 
@@ -67,15 +69,12 @@ func (fs *Filesystem) Store(key string, data io.ReadSeeker, checksum string) (*S
 	joined := filepath.Join(fs.root, key)
 	dir := filepath.Dir(joined)
 
-	/*
-		#nosec - filesystem storage is only used for local development.
-	*/
-	err := os.MkdirAll(dir, 0755)
+	err := fs.fs.MkdirAll(dir, 0755)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create parent directory")
 	}
 
-	file, err := os.Create(joined)
+	file, err := fs.fs.Create(joined)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not open file")
 	}
@@ -91,8 +90,7 @@ func (fs *Filesystem) Store(key string, data io.ReadSeeker, checksum string) (*S
 // Delete deletes the file at the specified key
 func (fs *Filesystem) Delete(key string) error {
 	joined := filepath.Join(fs.root, key)
-
-	return os.Remove(joined)
+	return errors.Wrap(fs.fs.Remove(joined), "could not remove file")
 }
 
 // PresignedURL returns a URL that provides access to a file for 15 mintes.
@@ -109,13 +107,18 @@ func (fs *Filesystem) PresignedURL(key, contentType string) (string, error) {
 // It is the caller's responsibility to delete the tempfile.
 func (fs *Filesystem) Fetch(key string) (io.ReadCloser, error) {
 	sourcePath := filepath.Join(fs.root, key)
-	// #nosec
-	return os.Open(sourcePath)
+	f, err := fs.fs.Open(sourcePath)
+	return f, errors.Wrap(err, "could not open file")
 }
 
 // FileSystem returns the underlying afero filesystem
 func (fs *Filesystem) FileSystem() *afero.Afero {
 	return fs.fs
+}
+
+// TempFileSystem returns the temporary afero filesystem
+func (fs *Filesystem) TempFileSystem() *afero.Afero {
+	return fs.tempFs
 }
 
 // NewFilesystemHandler returns an Handler that adds a Content-Type header so that

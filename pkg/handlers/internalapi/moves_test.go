@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-openapi/swag"
+
 	"github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/route"
 
@@ -190,7 +191,7 @@ func (suite *HandlerSuite) TestSubmitPPMMoveForApprovalHandler() {
 	}
 	// And: a move is submitted
 	context := handlers.NewHandlerContext(suite.DB(), suite.TestLogger())
-	context.SetNotificationSender(notifications.NewStubNotificationSender(suite.TestLogger()))
+	context.SetNotificationSender(notifications.NewStubNotificationSender("milmovelocal", suite.TestLogger()))
 	handler := SubmitMoveHandler{context}
 	response := handler.Handle(params)
 
@@ -228,7 +229,7 @@ func (suite *HandlerSuite) TestSubmitHHGMoveForApprovalHandler() {
 
 	// And: a move is submitted
 	context := handlers.NewHandlerContext(suite.DB(), suite.TestLogger())
-	context.SetNotificationSender(notifications.NewStubNotificationSender(suite.TestLogger()))
+	context.SetNotificationSender(notifications.NewStubNotificationSender("milmovelocal", suite.TestLogger()))
 	handler := SubmitMoveHandler{context}
 	response := handler.Handle(params)
 
@@ -394,16 +395,23 @@ func (suite *HandlerSuite) TestShowMoveDatesSummaryForbiddenUser() {
 
 func (suite *HandlerSuite) TestShowShipmentSummaryWorksheet() {
 	move := testdatagen.MakeDefaultMove(suite.DB())
+	testdatagen.MakePPM(suite.DB(), testdatagen.Assertions{
+		PersonallyProcuredMove: models.PersonallyProcuredMove{},
+	})
 
 	req := httptest.NewRequest("GET", "/moves/some_id/shipment_summary_worksheet", nil)
 	req = suite.AuthenticateRequest(req, move.Orders.ServiceMember)
 
+	preparationDate := strfmt.Date(time.Date(2019, time.January, 1, 1, 1, 1, 1, time.UTC))
 	params := moveop.ShowShipmentSummaryWorksheetParams{
-		HTTPRequest: req,
-		MoveID:      strfmt.UUID(move.ID.String()),
+		HTTPRequest:     req,
+		MoveID:          strfmt.UUID(move.ID.String()),
+		PreparationDate: preparationDate,
 	}
 
 	context := handlers.NewHandlerContext(suite.DB(), suite.TestLogger())
+	planner := route.NewTestingPlanner(1044)
+	context.SetPlanner(planner)
 
 	handler := ShowShipmentSummaryWorksheetHandler{context}
 	response := handler.Handle(params)

@@ -1,3 +1,4 @@
+#documentation - docs/how-to/run-pre-commit-hooks.md
 repos:
   - repo: local
     hooks:
@@ -8,7 +9,7 @@ repos:
         types: [go]
 
   - repo: git://github.com/pre-commit/pre-commit-hooks
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: check-json
       - id: check-merge-conflict
@@ -45,6 +46,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: eslint
+        name: eslint
+        entry: node_modules/.bin/eslint --ext .js --ext .jsx --max-warnings=0
+        language: node
+        files: \.(js|jsx)$
+
+  - repo: local
+    hooks:
       - id: swagger
         name: API Swagger
         entry: bin/swagger validate swagger/api.yaml
@@ -64,6 +73,13 @@ repos:
         entry: bin/swagger validate swagger/orders.yaml
         language: script
 
+  - repo: local
+    hooks:
+    - id: swagger
+      name: DPS Swagger
+      entry: bin/swagger validate swagger/dps.yaml
+      language: script
+
   # Ensure markdown files have updated table of contents
   - repo: local
     hooks:
@@ -73,35 +89,57 @@ repos:
         language: script
         files: \.md$
 
-  - repo: git://github.com/dnephin/pre-commit-golang
-    rev: v0.3.2
+  - repo: local
     hooks:
-      - id: go-fmt
-      - id: go-vet
+      - id: go-imports
+        name: go imports
+        entry: bin/pre-commit-go-imports
+        language: script
+        files: \.go$
+        exclude: vendor/
+
+  - repo: local
+    hooks:
       - id: go-lint
+        name: go lint
+        entry: bin/pre-commit-go-lint
+        language: script
+        files: \.go$
+        exclude: vendor/
+
+  - repo: local
+    hooks:
+    - id: go-vet
+      name: go vet
+      entry: bin/pre-commit-go-vet
+      language: script
+      files: \.go$
+      exclude: vendor/
+      pass_filenames: false
 
   - repo: local
     hooks:
       - id: gosec
         name: gosec scanner
-        entry: bin/gosec -exclude=G104 -fmt text -quiet ./...
+        entry: bin/gosec -exclude=G104 -fmt text ./...
         language: script
         description: Inspects source code for security problems by scanning the Go AST.
         files: \.go$
+        pass_filenames: false
 
-  - repo: local
-    hooks:
-      - id: mdspell
-        name: mdspell
-        entry: bin/pre-commit-spellcheck
-        language: script
-        files: \.md$
-        exclude: >
-          (?x)^(
-            node_modules/|
-            vendor/|
-            docs/adr/index.md
-          )$
+  # - repo: local
+  #   hooks:
+  #     - id: mdspell
+  #       name: mdspell
+  #       entry: bin/pre-commit-spellcheck
+  #       language: script
+  #       files: \.md$
+  #       exclude: >
+  #         (?x)^(
+  #           node_modules/|
+  #           vendor/|
+  #           docs/adr/index.md
+  #         )$
 
   - repo: local
     hooks:
@@ -109,6 +147,8 @@ repos:
         name: regenerate docs index
         entry: bin/gen-docs-index
         language: script
+        files: \.md$
+        pass_filenames: false
 
   - repo: local
     hooks:
@@ -116,3 +156,12 @@ repos:
         name: dep version
         entry: bin/check_dep_version
         language: script
+
+  - repo: local
+    hooks:
+      - id: dep-check
+        name: dep check
+        entry: bin/pre-commit-dep-check
+        language: script
+        files: (\.go|Gopkg\.toml|Gopkg\.lock)$
+        pass_filenames: false

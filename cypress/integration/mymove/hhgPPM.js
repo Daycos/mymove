@@ -30,8 +30,20 @@ describe('service member adds a ppm to an hhg', function() {
     serviceMemberVerifiesPPMDatesAndLocationsEdited();
     serviceMemberEditsPPMWeight();
     serviceMemberVerifiesPPMWeightsEdited();
+    serviceMemberGoesBackToHomepage();
   });
 });
+
+function serviceMemberGoesBackToHomepage() {
+  cy
+    .get('.back-to-home')
+    .contains('BACK TO HOME')
+    .click();
+
+  cy.location().should(loc => {
+    expect(loc.pathname).to.eq('/');
+  });
+}
 
 function serviceMemberEditsHHGMoveDates() {
   cy.get('[data-cy="edit-move"]').click();
@@ -65,7 +77,7 @@ function serviceMemberVerifiesHHGPPMSummary() {
     expect(text).to.include('Orders Type: Permanent Change Of Station');
     expect(text).to.include('Orders Date:  05/20/2018');
     expect(text).to.include('Report-by Date: 08/01/2018');
-    expect(text).to.include('New Duty Station:  Yuma AFB');
+    expect(text).to.include('New Duty Station:  Fort Gordon');
     expect(text).to.include('Dependents?:  Yes');
     expect(text).to.include('Spouse Pro Gear?: Yes');
     expect(text).to.include('Orders Uploaded: 1');
@@ -103,12 +115,12 @@ function serviceMemberVerifiesHHGPPMSummary() {
 
     // PPM Panel
     expect(text).to.include('Shipment - You move your stuff (PPM)');
-    expect(text).to.include('Move Date: 05/20/2018');
+    expect(text).to.include('Move Date: 09/03/2018');
     expect(text).to.include('Pickup ZIP Code:  90210');
-    expect(text).to.include('Delivery ZIP Code:  50309');
+    expect(text).to.include('Delivery ZIP Code:  30813');
     expect(text).not.to.include('Storage: Not requested');
     expect(text).to.include('Estimated Weight:  1,50');
-    expect(text).to.include('Estimated PPM Incentive:  $4,255.80 - 4,703.78');
+    expect(text).to.include('Estimated PPM Incentive:  $2,677.52 - 2,959.36');
   });
 }
 
@@ -117,17 +129,17 @@ function serviceMemberVerifiesPPMWeightsEdited() {
     const text = $div.text();
 
     expect(text).to.include('Estimated Weight:  1,700 lbs');
-    expect(text).to.include('Estimated PPM Incentive:  $4,736.63 - 5,235.23');
+    expect(text).to.include('Estimated PPM Incentive:  $4,858.82 - 5,370.28');
   });
 }
 
 function serviceMemberEditsPPMWeight() {
   cy.get('[data-cy="edit-ppm-weight"]').click();
 
-  typeInInput({ name: 'weight_estimate', value: '1700' });
+  cy.typeInInput({ name: 'weight_estimate', value: '1700' });
 
-  cy.get('strong').contains('$4,736.63 - 5,235.23');
-  cy.get('.subtext').contains('Originally $4,255.80 - 4,255.80');
+  cy.get('strong').contains('$4,858.82 - 5,370.28');
+  cy.get('.subtext').contains('Originally $4,362.66 - 4,821.88');
 
   cy
     .get('button')
@@ -137,18 +149,17 @@ function serviceMemberEditsPPMWeight() {
 function serviceMemberVerifiesPPMDatesAndLocationsEdited() {
   cy.get('.ppm-container').should($div => {
     const text = $div.text();
-    console.log(text);
     expect(text).to.include('Move Date: 05/28/2018');
     expect(text).to.include('Pickup ZIP Code:  91206');
-    expect(text).to.include('Delivery ZIP Code:  50308');
+    expect(text).to.include('Delivery ZIP Code:  30813');
   });
 }
 function serviceMemberEditsPPMDatesAndLocations() {
   cy.get('[data-cy="edit-ppm-dates"]').click();
 
-  typeInInput({ name: 'planned_move_date', value: '5/28/2018' });
-  typeInInput({ name: 'pickup_postal_code', value: '91206' });
-  typeInInput({ name: 'destination_postal_code', value: '50308' });
+  cy.typeInInput({ name: 'original_move_date', value: '5/28/2018' });
+  cy.typeInInput({ name: 'pickup_postal_code', value: '91206' });
+  cy.typeInInput({ name: 'destination_postal_code', value: '30813' });
 
   cy
     .get('button')
@@ -171,9 +182,9 @@ function serviceMemberEditsBackupContactInfoSection() {
     .eq(3)
     .click();
 
-  typeInInput({ name: 'name', value: 'Backup Name' });
-  typeInInput({ name: 'email', value: 'backup@example.com' });
-  typeInInput({ name: 'telephone', value: '323-111-1111' });
+  cy.typeInInput({ name: 'name', value: 'Backup Name' });
+  cy.typeInInput({ name: 'email', value: 'backup@example.com' });
+  cy.typeInInput({ name: 'telephone', value: '323-111-1111' });
 
   cy
     .get('button')
@@ -203,21 +214,21 @@ function serviceMemberEditsContactInfoSection() {
     .eq(2)
     .click();
 
-  typeInInput({ name: 'serviceMember.telephone', value: '213-111-1111' });
-  typeInInput({ name: 'serviceMember.secondary_telephone', value: '222-222-2222' });
-  typeInInput({ name: 'serviceMember.personal_email', value: 'hhgforppm@awarded.com' });
+  cy.typeInInput({ name: 'serviceMember.telephone', value: '213-111-1111' });
+  cy.typeInInput({ name: 'serviceMember.secondary_telephone', value: '222-222-2222' });
+  cy.typeInInput({ name: 'serviceMember.personal_email', value: 'hhgforppm@awarded.com' });
   cy.get('[type="checkbox"]').check({ force: true });
-  typeInInput({ name: 'resAddress.street_address_1', value: '321 Any Street' });
-  typeInInput({ name: 'resAddress.street_address_2', value: 'P.O Box 54321' });
-  typeInInput({ name: 'resAddress.city', value: 'Los Angeles' });
+  cy.typeInInput({ name: 'resAddress.street_address_1', value: '321 Any Street' });
+  cy.typeInInput({ name: 'resAddress.street_address_2', value: 'P.O Box 54321' });
+  cy.typeInInput({ name: 'resAddress.city', value: 'Los Angeles' });
   cy.get('select[name="resAddress.state"]').select('CO');
-  typeInInput({ name: 'resAddress.postal_code', value: '91206' });
+  cy.typeInInput({ name: 'resAddress.postal_code', value: '91206' });
 
-  typeInInput({ name: 'backupAddress.street_address_1', value: '333 Any Street' });
-  typeInInput({ name: 'backupAddress.street_address_2', value: 'P.O Box 54321' });
-  typeInInput({ name: 'backupAddress.city', value: 'Los Angeles' });
+  cy.typeInInput({ name: 'backupAddress.street_address_1', value: '333 Any Street' });
+  cy.typeInInput({ name: 'backupAddress.street_address_2', value: 'P.O Box 54321' });
+  cy.typeInInput({ name: 'backupAddress.city', value: 'Los Angeles' });
   cy.get('select[name="backupAddress.state"]').select('CT');
-  typeInInput({ name: 'backupAddress.postal_code', value: '91206' });
+  cy.typeInInput({ name: 'backupAddress.postal_code', value: '91206' });
 
   cy
     .get('button')
@@ -228,7 +239,7 @@ function serviceMemberEditsContactInfoSection() {
 function serviceMemberVerifiesOrderWasEdited() {
   cy.get('.review-content').should($div => {
     const text = $div.text();
-    expect(text).to.include('Orders Type: Local Move');
+    expect(text).to.include('Orders Type: Permanent Change Of Station');
     expect(text).to.include('Orders Date:  05/26/2018');
     expect(text).to.include('Report-by Date: 09/01/2018');
     expect(text).to.include('New Duty Station:  NAS Fort Worth');
@@ -243,9 +254,9 @@ function serviceMemberEditsOrdersSection() {
     .eq(1)
     .click();
 
-  cy.get('select[name="orders_type"]').select('Local Move');
-  typeInInput({ name: 'issue_date', value: '5/26/2018' });
-  typeInInput({ name: 'report_by_date', value: '9/1/2018' });
+  cy.get('select[name="orders_type"]').select('Permanent Change Of Station');
+  cy.typeInInput({ name: 'issue_date', value: '5/26/2018' });
+  cy.typeInInput({ name: 'report_by_date', value: '9/1/2018' });
   cy.get('input[type="radio"]').check('no', { force: true }); // checks yes for both radios on form
   cy.selectDutyStation('NAS Fort Worth', 'new_duty_station');
   cy
@@ -254,18 +265,9 @@ function serviceMemberEditsOrdersSection() {
     .click();
 }
 
-function typeInInput({ name, value }) {
-  cy
-    .get(`input[name="${name}"]`)
-    .clear()
-    .type(value)
-    .blur();
-}
-
 function serviceMemberVerifiesProfileWasEdited() {
   cy.get('.review-content').should($div => {
     const text = $div.text();
-    console.log(text);
     expect(text).to.include('Name: Harry James Potter Sr');
     expect(text).to.include('Branch:Air Force');
     expect(text).to.include('Rank/Pay Grade: E-9');
@@ -280,10 +282,10 @@ function serviceMemberEditsProfileSection() {
     .first()
     .click();
 
-  typeInInput({ name: 'first_name', value: 'Harry' });
-  typeInInput({ name: 'middle_name', value: 'James' });
-  typeInInput({ name: 'last_name', value: 'Potter' });
-  typeInInput({ name: 'suffix', value: 'Sr' });
+  cy.typeInInput({ name: 'first_name', value: 'Harry' });
+  cy.typeInInput({ name: 'middle_name', value: 'James' });
+  cy.typeInInput({ name: 'last_name', value: 'Potter' });
+  cy.typeInInput({ name: 'suffix', value: 'Sr' });
   cy.get('select[name="affiliation"]').select('Air Force');
   cy.get('select[name="rank"]').select('E-9');
   cy
@@ -356,16 +358,16 @@ function serviceMemberFillsInDatesAndLocations() {
     .should('contain', 'Review');
 
   cy
-    .get('input[name="planned_move_date"]')
+    .get('input[name="original_move_date"]')
     .should('have.value', '5/20/2018')
     .clear()
     .first()
-    .type('9/2/2018{enter}')
+    .type('9/3/2018{enter}')
     .blur();
 
   cy.get('input[name="pickup_postal_code"]').should('have.value', '90210');
 
-  cy.get('input[name="destination_postal_code"]').should('have.value', '50309');
+  cy.get('input[name="destination_postal_code"]').should('have.value', '30813');
 
   cy.nextPage();
 }
@@ -434,12 +436,12 @@ function serviceMemberCanReviewMoveSummary() {
   cy.get('.ppm-container').should($div => {
     const text = $div.text();
     expect(text).to.include('Shipment - You move your stuff (PPM)');
-    expect(text).to.include('Move Date: 05/20/2018');
+    expect(text).to.include('Move Date: 09/03/2018');
     expect(text).to.include('Pickup ZIP Code:  90210');
-    expect(text).to.include('Delivery ZIP Code:  50309');
+    expect(text).to.include('Delivery ZIP Code:  30813');
     expect(text).not.to.include('Storage: Not requested');
     expect(text).to.include('Estimated Weight:  1,50');
-    expect(text).to.include('Estimated PPM Incentive:  $4,255.80 - 4,703.78');
+    expect(text).to.include('Estimated PPM Incentive:  $2,677.52 - 2,959.36');
   });
 
   cy.nextPage();
@@ -489,6 +491,6 @@ function serviceMemberViewsUpdatedHomePage() {
     // PPM information and details
     expect(text).to.include('Next Step: Wait for approval');
     expect(text).to.include('Weight (est.): 150');
-    expect(text).to.include('Incentive (est.): $4,255.80 - 4,703.78');
+    expect(text).to.include('Incentive (est.): $2,677.52 - 2,959.36');
   });
 }

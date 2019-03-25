@@ -15,6 +15,7 @@ import { loadEntitlementsFromState } from 'shared/entitlements';
 import 'scenes/Moves/Ppm/DateAndLocation.css';
 import { editBegin, editSuccessful, entitlementChangeBegin } from './ducks';
 import { isHHGPPMComboMove } from '../Moves/Ppm/ducks';
+import scrollToTop from 'shared/scrollToTop';
 
 const sitEstimateDebounceTime = 300;
 
@@ -34,7 +35,7 @@ let EditDateAndLocationForm = props => {
       <h1 className="sm-heading"> Edit PPM Dates & Locations </h1>
       <p>Changes could impact your move, including the estimated PPM incentive.</p>
       <h2 className="sm-heading-2"> Move Date </h2>
-      <SwaggerField fieldName="planned_move_date" onChange={getSitEstimate} swagger={schema} required />
+      <SwaggerField fieldName="original_move_date" onChange={getSitEstimate} swagger={schema} required />
       <hr className="spacer" />
       <h2 className="sm-heading-2">Pickup Location</h2>
       <SwaggerField fieldName="pickup_postal_code" onChange={getSitEstimate} swagger={schema} required />
@@ -99,7 +100,7 @@ class EditDateAndLocation extends Component {
           this.props.editSuccessful();
           this.props.history.goBack();
         } else {
-          window.scrollTo(0, 0);
+          scrollToTop();
         }
       });
     }
@@ -119,7 +120,7 @@ class EditDateAndLocation extends Component {
     // eslint-disable-next-line
     estimateValues[field] = value;
     this.debouncedSitEstimate(
-      estimateValues.planned_move_date,
+      estimateValues.original_move_date,
       estimateValues.days_in_storage,
       estimateValues.pickup_postal_code,
       estimateValues.destination_postal_code,

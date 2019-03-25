@@ -6,7 +6,6 @@ describe('The document viewer', function() {
     beforeEach(() => {
       cy.setupBaseUrl(officeAppName);
       cy.logout();
-      cy.clearCookies();
     });
     it('shows page not found', function() {
       cy.patientVisit('/moves/foo/documents');
@@ -210,10 +209,7 @@ describe('The document viewer', function() {
         .contains('Delivered HHGs')
         .click();
 
-      cy
-        .get('div')
-        .contains('DOOB')
-        .dblclick();
+      cy.selectQueueItemMoveLocator('DOOB');
 
       cy.location().should(loc => {
         expect(loc.pathname).to.match(/^\/queues\/new\/moves\/[^/]+\/basics/);

@@ -20,26 +20,32 @@ var ErrZeroLengthFile = errors.New("File has length of 0")
 // Uploader encapsulates a few common processes: creating Uploads for a Document,
 // generating pre-signed URLs for file access, and deleting Uploads.
 type Uploader struct {
-	db     *pop.Connection
-	logger *zap.Logger
-	Storer storage.FileStorer
+	db               *pop.Connection
+	logger           Logger
+	Storer           storage.FileStorer
+	UploadStorageKey string
 }
 
 // NewUploader creates and returns a new uploader
-func NewUploader(db *pop.Connection, logger *zap.Logger, storer storage.FileStorer) *Uploader {
+func NewUploader(db *pop.Connection, logger Logger, storer storage.FileStorer) *Uploader {
 	return &Uploader{
-		db:     db,
-		logger: logger,
-		Storer: storer,
+		db:               db,
+		logger:           logger,
+		Storer:           storer,
+		UploadStorageKey: "",
 	}
 }
 
-// CreateUpload creates a new Upload by performing validations, storing the specified
+// SetUploadStorageKey set the Upload.StorageKey member
+func (u *Uploader) SetUploadStorageKey(key string) {
+	u.UploadStorageKey = key
+}
+
+// CreateUploadForDocument creates a new Upload by performing validations, storing the specified
 // file using the supplied storer, and saving an Upload object to the database containing
 // the file's metadata.
-func (u *Uploader) CreateUpload(documentID *uuid.UUID, userID uuid.UUID, file afero.File) (*models.Upload, *validate.Errors, error) {
+func (u *Uploader) CreateUploadForDocument(documentID *uuid.UUID, userID uuid.UUID, file afero.File, allowedTypes AllowedFileTypes) (*models.Upload, *validate.Errors, error) {
 	responseVErrors := validate.NewErrors()
-	var responseError error
 
 	info, err := file.Stat()
 	if err != nil {
@@ -54,6 +60,13 @@ func (u *Uploader) CreateUpload(documentID *uuid.UUID, userID uuid.UUID, file af
 	if err != nil {
 		u.logger.Error("Could not detect content type", zap.Error(err))
 		return nil, responseVErrors, err
+	}
+
+	validator := models.NewStringInList(contentType, "ContentType", allowedTypes)
+	validator.IsValid(responseVErrors)
+	if responseVErrors.HasAny() {
+		u.logger.Error("Invalid content type for upload", zap.String("Filename", file.Name()), zap.String("ContentType", contentType))
+		return nil, responseVErrors, nil
 	}
 
 	checksum, err := storage.ComputeChecksum(file)
@@ -74,14 +87,20 @@ func (u *Uploader) CreateUpload(documentID *uuid.UUID, userID uuid.UUID, file af
 		Checksum:    checksum,
 	}
 
-	u.db.Transaction(func(db *pop.Connection) error {
+	// Set the Upload.StorageKey if set
+	if u.UploadStorageKey != "" {
+		newUpload.StorageKey = u.UploadStorageKey
+	}
+
+	var uploadError error
+	err = u.db.Transaction(func(db *pop.Connection) error {
 		transactionError := errors.New("Rollback The transaction")
 
 		verrs, err := db.ValidateAndCreate(newUpload)
 		if err != nil || verrs.HasAny() {
 			u.logger.Error("Error creating new upload", zap.Error(err))
 			responseVErrors.Append(verrs)
-			responseError = errors.Wrap(err, "Error creating new upload")
+			uploadError = errors.Wrap(err, "Error creating new upload")
 			return transactionError
 		}
 
@@ -89,21 +108,23 @@ func (u *Uploader) CreateUpload(documentID *uuid.UUID, userID uuid.UUID, file af
 		if _, err := u.Storer.Store(newUpload.StorageKey, file, checksum); err != nil {
 			u.logger.Error("failed to store object", zap.Error(err))
 			responseVErrors.Append(verrs)
-			responseError = errors.Wrap(err, "failed to store object")
+			uploadError = errors.Wrap(err, "failed to store object")
 			return transactionError
 		}
 
 		u.logger.Info("created an upload with id and key ", zap.Any("new_upload_id", newUpload.ID), zap.String("key", newUpload.StorageKey))
 		return nil
-
 	})
+	if err != nil {
+		return nil, responseVErrors, errors.Wrap(uploadError, "could not create upload")
+	}
 
-	return newUpload, responseVErrors, responseError
+	return newUpload, responseVErrors, nil
 }
 
-// CreateUploadNoDocument stores Upload but does not create a Document
-func (u *Uploader) CreateUploadNoDocument(userID uuid.UUID, aFile *afero.File) (*models.Upload, *validate.Errors, error) {
-	return u.CreateUpload(nil, userID, *aFile)
+// CreateUpload stores Upload but does not assign a Document
+func (u *Uploader) CreateUpload(userID uuid.UUID, aFile *afero.File, allowedFileTypes AllowedFileTypes) (*models.Upload, *validate.Errors, error) {
+	return u.CreateUploadForDocument(nil, userID, *aFile, allowedFileTypes)
 }
 
 // PresignedURL returns a URL that can be used to access an Upload's file.

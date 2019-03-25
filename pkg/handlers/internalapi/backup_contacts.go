@@ -6,6 +6,7 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/gofrs/uuid"
 	"github.com/honeycombio/beeline-go"
+
 	"github.com/transcom/mymove/pkg/auth"
 	backupop "github.com/transcom/mymove/pkg/gen/internalapi/internaloperations/backup_contacts"
 	"github.com/transcom/mymove/pkg/gen/internalmessages"
@@ -15,13 +16,14 @@ import (
 
 func payloadForBackupContactModel(contact models.BackupContact) internalmessages.ServiceMemberBackupContactPayload {
 	contactPayload := internalmessages.ServiceMemberBackupContactPayload{
-		ID:         handlers.FmtUUID(contact.ID),
-		UpdatedAt:  handlers.FmtDateTime(contact.UpdatedAt),
-		CreatedAt:  handlers.FmtDateTime(contact.CreatedAt),
-		Name:       &contact.Name,
-		Email:      &contact.Email,
-		Telephone:  contact.Phone,
-		Permission: internalmessages.BackupContactPermission(contact.Permission),
+		ID:              handlers.FmtUUID(contact.ID),
+		ServiceMemberID: *handlers.FmtUUID(contact.ServiceMemberID),
+		UpdatedAt:       handlers.FmtDateTime(contact.UpdatedAt),
+		CreatedAt:       handlers.FmtDateTime(contact.CreatedAt),
+		Name:            &contact.Name,
+		Email:           &contact.Email,
+		Telephone:       contact.Phone,
+		Permission:      internalmessages.BackupContactPermission(contact.Permission),
 	}
 	return contactPayload
 }

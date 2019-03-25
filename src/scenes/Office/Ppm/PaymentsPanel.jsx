@@ -3,11 +3,19 @@ import React, { Component, Fragment } from 'react';
 import { connect } from 'react-redux';
 import { push } from 'react-router-redux';
 import { bindActionCreators } from 'redux';
+import {
+  selectReimbursement,
+  approveReimbursement,
+  selectPPMForMove,
+  downloadPPMAttachments,
+  downloadPPMAttachmentsLabel,
+} from 'shared/Entities/modules/ppms';
+import { getLastError } from 'shared/Swagger/selectors';
 
-import { approveReimbursement, downloadPPMAttachments } from '../ducks';
 import { no_op } from 'shared/utils';
 import { formatCents, formatDate } from 'shared/formatters';
 import Alert from 'shared/Alert';
+import ToolTip from 'shared/ToolTip';
 
 import FontAwesomeIcon from '@fortawesome/react-fontawesome';
 import faCheck from '@fortawesome/fontawesome-free-solid/faCheck';
@@ -22,6 +30,10 @@ const attachmentsErrorMessages = {
   424: 'Could not find any receipts or documents for this PPM',
   500: 'An unexpected error has occurred',
 };
+
+function getUserDate() {
+  return new Date().toISOString().split('T')[0];
+}
 
 class PaymentsTable extends Component {
   state = {
@@ -54,14 +66,16 @@ class PaymentsTable extends Component {
   };
 
   documentUpload = () => {
-    const move = this.props.move;
-    this.props.push(`/moves/${move.id}/documents/new?move_document_type=SHIPMENT_SUMMARY`);
+    const { moveId } = this.props;
+    this.props.push(`/moves/${moveId}/documents/new?move_document_type=SHIPMENT_SUMMARY`);
   };
 
   downloadShipmentSummary = () => {
-    let moveID = get(this.props, 'move.id');
+    const { moveId } = this.props;
+    const userDate = getUserDate();
+
     // eslint-disable-next-line
-    window.open(`/internal/moves/${moveID}/shipment_summary_worksheet`);
+    window.open(`/internal/moves/${moveId}/shipment_summary_worksheet/?preparationDate=${userDate}`);
   };
 
   renderAdvanceAction = () => {
@@ -70,25 +84,27 @@ class PaymentsTable extends Component {
         return <div>{/* Further actions to come*/}</div>;
       } else {
         return (
-          <React.Fragment>
-            <div onClick={this.approveReimbursement}>
+          <div onClick={this.approveReimbursement}>
+            <ToolTip disabled={false} text="Approve" textStyle="tooltiptext-small">
               <FontAwesomeIcon aria-hidden className="icon approval-ready" icon={faCheck} title="Approve" />
-              <span className="tooltiptext">Approve</span>
-            </div>
-          </React.Fragment>
+            </ToolTip>
+          </div>
         );
       }
     } else {
       return (
-        <React.Fragment>
+        <ToolTip
+          disabled={false}
+          text={"Can't approve payment until shipment is approved"}
+          textStyle="tooltiptext-medium"
+        >
           <FontAwesomeIcon
             aria-hidden
             className="icon approval-blocked"
             icon={faCheck}
             title="Can't approve payment until shipment is approved."
           />
-          <span className="tooltiptext">Can't approve payment until shipment is approved.</span>
-        </React.Fragment>
+        </ToolTip>
       );
     }
   };
@@ -143,9 +159,7 @@ class PaymentsTable extends Component {
                       </div>
                     )}
                   </td>
-                  <td className="payment-table-column-content">
-                    <span className="tooltip">{this.renderAdvanceAction()}</span>
-                  </td>
+                  <td className="payment-table-column-content">{this.renderAdvanceAction()}</td>
                 </tr>
               </React.Fragment>
             ) : (
@@ -233,14 +247,17 @@ class PaymentsTable extends Component {
   }
 }
 
-const mapStateToProps = state => ({
-  ppm: get(state, 'office.officePPMs[0]', {}),
-  move: get(state, 'office.officeMove', {}),
-  advance: get(state, 'office.officePPMs[0].advance', {}),
-  hasError: false,
-  errorMessage: state.office.error,
-  attachmentsError: get(state, 'office.downloadAttachmentsHasError'),
-});
+const mapStateToProps = (state, ownProps) => {
+  const { moveId } = ownProps;
+  const ppm = selectPPMForMove(state, moveId);
+  const advance = selectReimbursement(state, ppm.advance);
+  return {
+    ppm,
+    moveId,
+    advance,
+    attachmentsError: getLastError(state, downloadPPMAttachmentsLabel),
+  };
+};
 
 const mapDispatchToProps = dispatch =>
   bindActionCreators(

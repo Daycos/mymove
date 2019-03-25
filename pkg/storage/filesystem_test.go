@@ -6,12 +6,11 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestPresignedURL(t *testing.T) {
-	logger := zap.NewNop()
+func TestFilesystemPresignedURL(t *testing.T) {
 	fsParams := FilesystemParams{
 		root:    "/home/username",
 		webRoot: "https://example.text/files",
-		logger:  logger,
+		logger:  zap.NewNop(),
 	}
 	fs := NewFilesystem(fsParams)
 

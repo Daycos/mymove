@@ -8,6 +8,7 @@ import (
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/runtime"
 	"github.com/pkg/errors"
+
 	"github.com/transcom/mymove/pkg/gen/internalapi"
 	internalops "github.com/transcom/mymove/pkg/gen/internalapi/internaloperations"
 	"github.com/transcom/mymove/pkg/handlers"
@@ -23,9 +24,6 @@ func NewInternalAPIHandler(context handlers.HandlerContext) http.Handler {
 	internalAPI := internalops.NewMymoveAPI(internalSpec)
 
 	internalAPI.UsersShowLoggedInUserHandler = ShowLoggedInUserHandler{context}
-
-	internalAPI.IssuesCreateIssueHandler = CreateIssueHandler{context}
-	internalAPI.IssuesIndexIssuesHandler = IndexIssuesHandler{context}
 
 	internalAPI.CertificationCreateSignedCertificationHandler = CreateSignedCertificationHandler{context}
 
@@ -90,8 +88,6 @@ func NewInternalAPIHandler(context handlers.HandlerContext) http.Handler {
 	internalAPI.OfficeCancelMoveHandler = CancelMoveHandler{context}
 
 	internalAPI.EntitlementsValidateEntitlementHandler = ValidateEntitlementHandler{context}
-
-	internalAPI.GexSendGexRequestHandler = SendGexRequestHandler{context}
 
 	internalAPI.CalendarShowAvailableMoveDatesHandler = ShowAvailableMoveDatesHandler{context}
 

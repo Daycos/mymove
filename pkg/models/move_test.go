@@ -6,6 +6,7 @@ import (
 	"github.com/gofrs/uuid"
 
 	"github.com/transcom/mymove/pkg/auth"
+	"github.com/transcom/mymove/pkg/dates"
 	. "github.com/transcom/mymove/pkg/models"
 	"github.com/transcom/mymove/pkg/testdatagen"
 )
@@ -39,8 +40,9 @@ func (suite *ModelSuite) TestFetchMove() {
 	order1 := testdatagen.MakeDefaultOrder(suite.DB())
 	order2 := testdatagen.MakeDefaultOrder(suite.DB())
 
-	pickupDate := time.Now()
-	deliveryDate := time.Now().AddDate(0, 0, 1)
+	calendar := dates.NewUSCalendar()
+	pickupDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
+	deliveryDate := dates.NextWorkday(*calendar, pickupDate)
 
 	tdl := testdatagen.MakeDefaultTDL(suite.DB())
 
@@ -50,7 +52,7 @@ func (suite *ModelSuite) TestFetchMove() {
 	session := &auth.Session{
 		UserID:          order1.ServiceMember.UserID,
 		ServiceMemberID: order1.ServiceMemberID,
-		ApplicationName: auth.MyApp,
+		ApplicationName: auth.MilApp,
 	}
 	selectedMoveType := SelectedMoveTypeHHG
 
@@ -143,8 +145,9 @@ func (suite *ModelSuite) TestMoveStateMachine() {
 	move.PersonallyProcuredMoves = append(move.PersonallyProcuredMoves, ppm)
 
 	// Create hhg (shipment) on this move
-	pickupDate := time.Now()
-	deliveryDate := time.Now().AddDate(0, 0, 1)
+	calendar := dates.NewUSCalendar()
+	pickupDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
+	deliveryDate := dates.NextWorkday(*calendar, pickupDate)
 	tdl := testdatagen.MakeDefaultTDL(suite.DB())
 	market := "dHHG"
 	sourceGBLOC := "KKFA"
@@ -253,14 +256,15 @@ func (suite *ModelSuite) TestSaveMoveDependenciesSuccess() {
 func (suite *ModelSuite) TestSaveMoveDependenciesSetsGBLOCSuccess() {
 	// Given: A shipment's move with orders in acceptable status
 
-	dutyStation := testdatagen.FetchOrMakeDefaultDutyStation(suite.DB())
+	dutyStation := testdatagen.FetchOrMakeDefaultCurrentDutyStation(suite.DB())
 	serviceMember := testdatagen.MakeDefaultServiceMember(suite.DB())
 	serviceMember.DutyStationID = &dutyStation.ID
 	serviceMember.DutyStation = dutyStation
 	suite.MustSave(&serviceMember)
 
-	pickupDate := time.Now()
-	deliveryDate := time.Now().AddDate(0, 0, 1)
+	calendar := dates.NewUSCalendar()
+	pickupDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
+	deliveryDate := dates.NextWorkday(*calendar, pickupDate)
 	tdl := testdatagen.MakeDefaultTDL(suite.DB())
 	market := "dHHG"
 	sourceGBLOC := "BMLK"

@@ -6,15 +6,21 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/transcom/mymove/pkg/paperwork"
+
+	"github.com/transcom/mymove/pkg/dates"
 	"github.com/transcom/mymove/pkg/route"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 
+	"github.com/transcom/mymove/pkg/auth"
+
 	"github.com/transcom/mymove/pkg/gen/apimessages"
 	shipmentop "github.com/transcom/mymove/pkg/gen/restapi/apioperations/shipments"
 	"github.com/transcom/mymove/pkg/handlers"
 	"github.com/transcom/mymove/pkg/models"
+	paperworkservice "github.com/transcom/mymove/pkg/services/paperwork"
 	storageTest "github.com/transcom/mymove/pkg/storage/test"
 	"github.com/transcom/mymove/pkg/testdatagen"
 	"github.com/transcom/mymove/pkg/testdatagen/scenario"
@@ -43,12 +49,79 @@ func (suite *HandlerSuite) TestPayloadForShipmentModelWhenTspIDIsPresent() {
 	suite.Equal(shipmentPayload.TransportationServiceProviderID, expectedTspID)
 }
 
+func (suite *HandlerSuite) TestPayloadForShipmentWithNullValues() {
+	shipment := testdatagen.MakeDefaultShipment(suite.DB())
+
+	// Set all values that can be nil to nil
+	shipment.SourceGBLOC = nil
+	shipment.DestinationGBLOC = nil
+	shipment.GBLNumber = nil
+	shipment.Market = nil
+	shipment.TrafficDistributionListID = nil
+	shipment.TrafficDistributionList = nil
+	shipment.ActualPickupDate = nil
+	shipment.ActualPackDate = nil
+	shipment.ActualDeliveryDate = nil
+	shipment.BookDate = nil
+	shipment.RequestedPickupDate = nil
+	shipment.OriginalDeliveryDate = nil
+	shipment.OriginalPackDate = nil
+	shipment.EstimatedPackDays = nil
+	shipment.EstimatedTransitDays = nil
+	shipment.PickupAddressID = nil
+	shipment.PickupAddress = nil
+	shipment.SecondaryPickupAddressID = nil
+	shipment.SecondaryPickupAddress = nil
+	shipment.DeliveryAddressID = nil
+	shipment.DeliveryAddress = nil
+	shipment.PartialSITDeliveryAddressID = nil
+	shipment.PartialSITDeliveryAddress = nil
+	shipment.PmSurveyConductedDate = nil
+	shipment.PmSurveyCompletedAt = nil
+	shipment.PmSurveyPlannedPackDate = nil
+	shipment.PmSurveyPlannedPickupDate = nil
+	shipment.PmSurveyPlannedDeliveryDate = nil
+	shipment.PmSurveyWeightEstimate = nil
+	shipment.PmSurveyProgearWeightEstimate = nil
+	shipment.PmSurveySpouseProgearWeightEstimate = nil
+	shipment.PmSurveyNotes = nil
+
+	shipmentPayload := payloadForShipmentModel(shipment)
+	suite.Nil(shipmentPayload.SourceGbloc)
+	suite.Nil(shipmentPayload.DestinationGbloc)
+	suite.Nil(shipmentPayload.GblNumber)
+	suite.Nil(shipmentPayload.Market)
+	suite.Nil(shipmentPayload.TrafficDistributionList)
+	suite.Nil(shipmentPayload.ActualPickupDate)
+	suite.Nil(shipmentPayload.ActualPackDate)
+	suite.Nil(shipmentPayload.ActualDeliveryDate)
+	suite.Nil(shipmentPayload.BookDate)
+	suite.Nil(shipmentPayload.RequestedPickupDate)
+	suite.Nil(shipmentPayload.OriginalDeliveryDate)
+	suite.Nil(shipmentPayload.OriginalPackDate)
+	suite.Nil(shipmentPayload.EstimatedPackDays)
+	suite.Nil(shipmentPayload.EstimatedTransitDays)
+	suite.Nil(shipmentPayload.PickupAddress)
+	suite.Nil(shipmentPayload.SecondaryPickupAddress)
+	suite.Nil(shipmentPayload.DeliveryAddress)
+	suite.Nil(shipmentPayload.PartialSitDeliveryAddress)
+	suite.Nil(shipmentPayload.PmSurveyConductedDate)
+	suite.Nil(shipmentPayload.PmSurveyCompletedAt)
+	suite.Nil(shipmentPayload.PmSurveyPlannedPackDate)
+	suite.Nil(shipmentPayload.PmSurveyPlannedPickupDate)
+	suite.Nil(shipmentPayload.PmSurveyPlannedDeliveryDate)
+	suite.Nil(shipmentPayload.PmSurveyWeightEstimate)
+	suite.Nil(shipmentPayload.PmSurveyProgearWeightEstimate)
+	suite.Nil(shipmentPayload.PmSurveySpouseProgearWeightEstimate)
+	suite.Nil(shipmentPayload.PmSurveyNotes)
+}
+
 func (suite *HandlerSuite) TestGetShipmentHandler() {
 	numTspUsers := 1
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusSUBMITTED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -76,12 +149,33 @@ func (suite *HandlerSuite) TestGetShipmentHandler() {
 	suite.Equal(apimessages.AffiliationARMY, *okResponse.Payload.ServiceMember.Affiliation)
 }
 
+func (suite *HandlerSuite) TestGetShipmentHandlerWhereSessionServiceMemberIDDoesNotEqualShipmentServiceMemberID() {
+	serviceMember := testdatagen.MakeDefaultServiceMember(suite.DB())
+	shipment := testdatagen.MakeDefaultShipment(suite.DB())
+
+	req := httptest.NewRequest("GET", "/shipments", nil)
+	req = suite.AuthenticateRequest(req, serviceMember)
+
+	params := shipmentop.GetShipmentParams{
+		HTTPRequest: req,
+		ShipmentID:  strfmt.UUID(shipment.ID.String()),
+	}
+
+	session := auth.SessionFromRequestContext(params.HTTPRequest)
+
+	handler := GetShipmentHandler{handlers.NewHandlerContext(suite.DB(), suite.TestLogger())}
+	response := handler.Handle(params)
+
+	suite.NotEqual(session.ServiceMemberID, shipment.ServiceMemberID)
+	suite.Assertions.IsType(&shipmentop.GetShipmentForbidden{}, response)
+}
+
 func (suite *HandlerSuite) TestPatchShipmentHandlerNetWeight() {
 	numTspUsers := 1
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAWARDED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -120,7 +214,7 @@ func (suite *HandlerSuite) TestPatchShipmentHandlerPmSurvey() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAWARDED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -130,7 +224,8 @@ func (suite *HandlerSuite) TestPatchShipmentHandlerPmSurvey() {
 	req := httptest.NewRequest("PATCH", "/shipments/shipmentId", nil)
 	req = suite.AuthenticateTspRequest(req, tspUser)
 
-	genericDate := time.Now()
+	calendar := dates.NewUSCalendar()
+	genericDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
 	UpdatePayload := apimessages.Shipment{
 		PmSurveyPlannedPackDate:             handlers.FmtDatePtr(&genericDate),
 		PmSurveyConductedDate:               handlers.FmtDatePtr(&genericDate),
@@ -175,7 +270,7 @@ func (suite *HandlerSuite) TestPatchShipmentHandlerPmSurveyWrongTSP() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAWARDED}
-	_, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	_, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	shipment := shipments[0]
@@ -186,7 +281,8 @@ func (suite *HandlerSuite) TestPatchShipmentHandlerPmSurveyWrongTSP() {
 	req := httptest.NewRequest("PATCH", "/shipments/shipmentId", nil)
 	req = suite.AuthenticateTspRequest(req, otherTspUser)
 
-	genericDate := time.Now()
+	calendar := dates.NewUSCalendar()
+	genericDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
 	UpdatePayload := apimessages.Shipment{
 		PmSurveyPlannedPackDate:             handlers.FmtDatePtr(&genericDate),
 		PmSurveyConductedDate:               handlers.FmtDatePtr(&genericDate),
@@ -219,7 +315,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerAllShipments() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusSUBMITTED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -283,8 +379,9 @@ func (suite *HandlerSuite) TestCreateGovBillOfLadingHandler() {
 	shipment.Move.Orders.TAC = nil
 	suite.MustSave(&shipment.Move.Orders)
 
+	formCreator := paperworkservice.NewFormCreator(context.FileStorer().TempFileSystem(), paperwork.NewFormFiller())
 	// And: the create gbl handler is called
-	handler := CreateGovBillOfLadingHandler{context}
+	handler := CreateGovBillOfLadingHandler{context, formCreator}
 	response := handler.Handle(params)
 
 	// Then: expect a 417 status code
@@ -297,14 +394,14 @@ func (suite *HandlerSuite) TestCreateGovBillOfLadingHandler() {
 	suite.MustSave(&shipment.Move.Orders)
 
 	// And: the create gbl handler is called
-	handler = CreateGovBillOfLadingHandler{context}
+	handler = CreateGovBillOfLadingHandler{context, formCreator}
 	response = handler.Handle(params)
 
 	// Then: expect a 200 status code
 	suite.Assertions.IsType(&shipmentop.CreateGovBillOfLadingCreated{}, response)
 
 	// When: there is an existing GBL for a shipment and handler is called
-	handler = CreateGovBillOfLadingHandler{handlers.NewHandlerContext(suite.DB(), suite.TestLogger())}
+	handler = CreateGovBillOfLadingHandler{handlers.NewHandlerContext(suite.DB(), suite.TestLogger()), formCreator}
 	response = handler.Handle(params)
 
 	// Then: expect a 400 status code
@@ -328,7 +425,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerPaginated() {
 	numShipments := 25
 	numShipmentOfferSplit := []int{15, 10}
 	status := []models.ShipmentStatus{models.ShipmentStatusSUBMITTED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser1 := tspUsers[0]
@@ -376,7 +473,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerSortShipmentsPickupAsc() {
 	numShipments := 3
 	numShipmentOfferSplit := []int{3}
 	status := []models.ShipmentStatus{models.ShipmentStatusDELIVERED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -425,7 +522,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerSortShipmentsPickupDesc() {
 	numShipments := 3
 	numShipmentOfferSplit := []int{3}
 	status := []models.ShipmentStatus{models.ShipmentStatusINTRANSIT}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -474,7 +571,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerSortShipmentsDeliveryAsc() {
 	numShipments := 3
 	numShipmentOfferSplit := []int{3}
 	status := []models.ShipmentStatus{models.ShipmentStatusDELIVERED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -523,7 +620,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerSortShipmentsDeliveryDesc() 
 	numShipments := 3
 	numShipmentOfferSplit := []int{3}
 	status := []models.ShipmentStatus{models.ShipmentStatusDELIVERED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -572,7 +669,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerFilterByStatus() {
 	numShipments := 25
 	numShipmentOfferSplit := []int{25}
 	status := []models.ShipmentStatus{models.ShipmentStatusSUBMITTED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -602,7 +699,7 @@ func (suite *HandlerSuite) TestIndexShipmentsHandlerFilterByStatusNoResults() {
 	numShipments := 25
 	numShipmentOfferSplit := []int{25}
 	status := []models.ShipmentStatus{models.ShipmentStatusSUBMITTED}
-	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, _, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -631,7 +728,7 @@ func (suite *HandlerSuite) TestAcceptShipmentHandler() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAWARDED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -661,7 +758,7 @@ func (suite *HandlerSuite) TestTransportShipmentHandler() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAPPROVED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -707,7 +804,7 @@ func (suite *HandlerSuite) TestDeliverShipmentHandler() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusINTRANSIT}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -725,6 +822,11 @@ func (suite *HandlerSuite) TestDeliverShipmentHandler() {
 		},
 	})
 
+	// Make sure there's a FuelEIADieselPrice to use
+	assertions := testdatagen.Assertions{}
+	assertions.FuelEIADieselPrice.BaselineRate = 6
+	testdatagen.MakeFuelEIADieselPrices(suite.DB(), assertions)
+
 	// Handler to Test
 	handler := DeliverShipmentHandler{handlers.NewHandlerContext(suite.DB(), suite.TestLogger())}
 	handler.SetPlanner(route.NewTestingPlanner(1044))
@@ -733,7 +835,8 @@ func (suite *HandlerSuite) TestDeliverShipmentHandler() {
 	path := fmt.Sprintf("/shipments/%s/deliver", shipment.ID.String())
 	req := httptest.NewRequest("POST", path, nil)
 	req = suite.AuthenticateTspRequest(req, tspUser)
-	actualDeliveryDate := time.Now()
+	calendar := dates.NewUSCalendar()
+	actualDeliveryDate := dates.NextWorkday(*calendar, time.Date(testdatagen.TestYear, time.January, 28, 0, 0, 0, 0, time.UTC))
 	body := apimessages.ActualDeliveryDate{
 		ActualDeliveryDate: handlers.FmtDatePtr(&actualDeliveryDate),
 	}
@@ -744,6 +847,7 @@ func (suite *HandlerSuite) TestDeliverShipmentHandler() {
 	}
 
 	response := handler.Handle(params)
+	suite.CheckNotErrorResponse(response)
 	suite.Assertions.IsType(&shipmentop.DeliverShipmentOK{}, response)
 	okResponse := response.(*shipmentop.DeliverShipmentOK)
 	suite.Equal("DELIVERED", string(okResponse.Payload.Status))
@@ -768,7 +872,7 @@ func (suite *HandlerSuite) TestCompletePmSurveyHandler() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAPPROVED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
@@ -797,7 +901,7 @@ func (suite *HandlerSuite) TestGetShipmentInvoicesHandler() {
 	numShipments := 1
 	numShipmentOfferSplit := []int{1}
 	status := []models.ShipmentStatus{models.ShipmentStatusAPPROVED}
-	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status)
+	tspUsers, shipments, _, err := testdatagen.CreateShipmentOfferData(suite.DB(), numTspUsers, numShipments, numShipmentOfferSplit, status, models.SelectedMoveTypeHHG)
 	suite.NoError(err)
 
 	tspUser := tspUsers[0]
